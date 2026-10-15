@@ -1,0 +1,14 @@
+# Everything the image does not need. Secrets and runtime data must never be baked in.
+.git
+.github
+.env
+*.env
+**/node_modules
+web/dist
+storage
+.data
+.runtime
+deploy
+tools
+*.md
+start.bat

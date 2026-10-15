@@ -1,0 +1,11 @@
+* text=auto
+
+# These run on Linux (the server and the CI runner); CRLF would break them.
+*.sh text eol=lf
+*.yml text eol=lf
+Dockerfile text eol=lf
+deploy/Caddyfile text eol=lf
+
+# Windows scripts keep Windows line endings.
+*.bat text eol=crlf
+*.ps1 text eol=crlf

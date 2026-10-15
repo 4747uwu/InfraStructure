@@ -1,0 +1,11 @@
+node_modules/
+web/dist/
+
+# Secrets and machine-local config
+.env
+tools/publish.config.json
+
+# Runtime data: portable mongod, database files, uploaded installers
+.runtime/
+.data/
+storage/

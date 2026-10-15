@@ -1,0 +1,5 @@
+# SITE_ADDRESS is a domain (HTTPS with automatic certificates) or ":80" (plain HTTP on any host).
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy app:4600
+}

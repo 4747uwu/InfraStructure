@@ -1,0 +1,13 @@
+{
+  "name": "routerhub",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Router Hub - store, version and share client router installers",
+  "type": "module",
+  "scripts": {
+    "setup": "npm install --prefix server && npm install --prefix web && npm run build",
+    "build": "npm run build --prefix web",
+    "start": "node tools/start.mjs",
+    "dev:web": "npm run dev --prefix web"
+  }
+}

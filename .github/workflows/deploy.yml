@@ -1,0 +1,228 @@
+name: Deploy
+
+# Every push to main is built into a container image and put on the server.
+# There is no test stage: the only gate is the stack's own health check, and a
+# release that fails it is rolled back to the image that was running before.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "tools/**"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Roll back or redeploy: an image tag that was already built (for example sha-1a2b3c4). Leave empty to build and deploy this commit."
+        required: false
+        type: string
+
+# One deployment at a time. A newer push waits for the running one instead of racing it.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build image
+    if: ${{ !inputs.image_tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.ref.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out image name and tag
+        id: ref
+        run: |
+          # Registry paths must be lowercase; repository names need not be.
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.tag }}
+            ${{ steps.ref.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to server
+    needs: build
+    # Also runs when the build was skipped on purpose (redeploying an existing tag).
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      STACK_DIR: routerhub # folder in the SSH user's home directory
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      DOMAIN: ${{ secrets.DOMAIN }}
+      # Read by `sshpass -e`, so the password never appears on a command line.
+      SSHPASS: ${{ secrets.SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        run: |
+          missing=0
+          for pair in SSH_HOST:SSH_HOST SSH_USER:SSH_USER SSHPASS:SSH_PASSWORD; do
+            var="${pair%%:*}"; secret="${pair#*:}"
+            if [ -z "${!var}" ]; then
+              echo "::error::Repository secret $secret is not set."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Resolve image
+        id: ref
+        env:
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+          BUILT_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=${REQUESTED_TAG:-$BUILT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up SSH
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass > /dev/null
+
+          install -m 700 -d ~/.ssh
+          port="${SSH_PORT:-22}"
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            # Pinned host key: the connection is refused if the server is impersonated.
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "::error::Could not reach $SSH_HOST on port $port. Check SSH_HOST, SSH_PORT and the server firewall."
+            exit 1
+          fi
+
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port $port
+            PreferredAuthentications password,keyboard-interactive
+            PubkeyAuthentication no
+            NumberOfPasswordPrompts 1
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+
+          if ! sshpass -e ssh server true; then
+            echo "::error::SSH sign-in to $SSH_USER@$SSH_HOST failed. Check SSH_USER and SSH_PASSWORD, and that the server allows password sign-in."
+            exit 1
+          fi
+
+      - name: Make sure Docker is installed on the server
+        run: |
+          sshpass -e ssh server 'bash -s' <<'EOF'
+          set -euo pipefail
+          if docker compose version > /dev/null 2>&1; then
+            docker compose version
+            exit 0
+          fi
+          if [ "$(id -u)" -ne 0 ]; then
+            echo "::error::Docker with the compose plugin is not available to $(whoami). Install it once as root (curl -fsSL https://get.docker.com | sh) and add this user to the docker group, or use root as SSH_USER."
+            exit 1
+          fi
+          echo "Docker not found - installing it (first deployment only)."
+          curl -fsSL https://get.docker.com | sh
+          systemctl enable --now docker
+          docker compose version
+          EOF
+
+      - name: Write stack configuration
+        env:
+          IMAGE: ${{ steps.ref.outputs.image }}
+          TAG: ${{ steps.ref.outputs.tag }}
+        run: |
+          umask 077
+          {
+            echo "IMAGE=$IMAGE"
+            echo "IMAGE_TAG=$TAG"
+            echo "SITE_ADDRESS=${DOMAIN:-:80}"
+          } > .env.next
+          {
+            echo "PUBLIC_BASE_URL=${DOMAIN:+https://$DOMAIN}"
+            echo "SECURE_COOKIES=$([ -n "$DOMAIN" ] && echo true || echo false)"
+          } > app.env
+
+      - name: Upload stack files
+        run: |
+          sshpass -e ssh server "mkdir -p '$STACK_DIR' && chmod 700 '$STACK_DIR'"
+          sshpass -e scp -q deploy/docker-compose.yml deploy/Caddyfile deploy/deploy.sh deploy/accounts.env .env.next app.env "server:$STACK_DIR/"
+
+      - name: Deploy
+        env:
+          TAG: ${{ steps.ref.outputs.tag }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The job's own short-lived token lets the server pull the private image.
+          # It reaches the server on stdin, never on a command line, and expires with this run.
+          printf '%s' "$REGISTRY_TOKEN" | sshpass -e ssh server "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" > /dev/null
+          sshpass -e ssh server "cd '$STACK_DIR' && bash deploy.sh '$TAG'"
+
+      - name: Sign the server out of the registry
+        if: always()
+        run: sshpass -e ssh server "docker logout ghcr.io" > /dev/null 2>&1 || true
+
+      - name: Check the site from outside
+        run: |
+          if [ -n "$DOMAIN" ]; then url="https://$DOMAIN"; else url="http://$SSH_HOST"; fi
+          # A first deployment with a domain needs a moment to obtain its certificate.
+          if curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --max-time 10 "$url/api/health" > /dev/null; then
+            echo "The site answers at $url"
+          else
+            echo "::error::The containers are healthy but $url does not answer. Check that ports 80 and 443 are open and that the domain points at the server."
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          TAG: ${{ steps.ref.outputs.tag }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          {
+            echo "### Deployment: $OUTCOME"
+            echo ""
+            echo "- Image tag: \`$TAG\`"
+            echo "- Commit: \`${GITHUB_SHA::7}\`"
+            echo "- To return to this release later: run this workflow manually with image tag \`$TAG\`."
+          } >> "$GITHUB_STEP_SUMMARY"
