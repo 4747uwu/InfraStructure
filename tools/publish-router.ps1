@@ -110,7 +110,8 @@ $distDir = Join-Path $ProjectDir "dist"
 Write-Host ""
 Write-Host "  Router Hub  -  publish" -ForegroundColor Magenta
 Write-Host "  Project : $ProjectDir"
-Write-Host "  Client  : $Client"
+# Folder scripts pass the client's ID; its name is shown once the hub answers.
+if ($Client -notmatch '^[0-9a-f]{24}$') { Write-Host "  Client  : $Client" }
 Write-Host "  Version : $Version"
 Write-Host "  Hub     : $Server"
 
@@ -228,10 +229,12 @@ $enc  = { param($s) [uri]::EscapeDataString([string]$s) }
 $auth = "Authorization: Bearer $Token"
 $sha  = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLower()
 
-Write-Step "Uploading to $Client on $Server"
+Write-Step "Uploading to $Server"
 if (-not $Force) {
     $check = Read-HubResponse (& curl.exe -sS -m 30 -H $auth -w "`n%{http_code}" "$Server/api/upload/check?client=$(& $enc $Client)&sha256=$sha")
     if ($check.Status -ne 200) { Write-Fail (Get-HubError $check) }
+    if ($check.Json.PSObject.Properties['client'] -and $check.Json.client) { Write-OK "Client on the hub: $($check.Json.client.name)" }
+    else { Write-OK "New client on the hub: $Client" }
     if ($check.Json.duplicate) {
         Write-Host "    --  The hub already stores this exact file as version $($check.Json.duplicate.version) (build $($check.Json.duplicate.build))." -ForegroundColor Yellow
         Write-Host "        Nothing to upload. Use -Force to store it again.`n"

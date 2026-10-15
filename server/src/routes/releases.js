@@ -27,6 +27,7 @@ router.get('/upload/check', requireUploader, async (req, res) => {
   const dup = client && /^[0-9a-f]{64}$/.test(sha) ? await findDuplicate(client._id, sha) : null;
   res.json({
     clientExists: Boolean(client),
+    client: client ? { name: client.name, slug: client.slug } : null,
     duplicate: dup ? { version: dup.version, build: dup.build, uploadedAt: dup.uploadedAt } : null,
   });
 });
