@@ -29,7 +29,7 @@ jobs:
   build:
     name: Build image
     if: ${{ !inputs.image_tag }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -73,7 +73,7 @@ jobs:
     needs: build
     # Also runs when the build was skipped on purpose (redeploying an existing tag).
     if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
     permissions:
@@ -147,6 +147,25 @@ jobs:
             echo "::error::SSH sign-in to $SSH_USER@$SSH_HOST failed. Check SSH_USER and SSH_PASSWORD, and that the server allows password sign-in."
             exit 1
           fi
+
+      - name: Check the server's web ports are free
+        run: |
+          # Caddy needs ports 80 and 443. If another program (an existing nginx, Apache or
+          # another site) already holds them, stop here before anything on the server changes.
+          sshpass -e ssh server 'bash -s' <<'EOF'
+          set -uo pipefail
+          if command -v docker > /dev/null 2>&1 && [ -n "$(docker ps -q --filter label=com.docker.compose.project=routerhub --filter label=com.docker.compose.service=caddy 2>/dev/null)" ]; then
+            echo "Ports 80 and 443 are held by this app's own proxy."
+            exit 0
+          fi
+          busy="$(ss -ltnpH 2>/dev/null | awk '$4 ~ /:(80|443)$/')"
+          if [ -n "$busy" ]; then
+            echo "::error::Ports 80/443 on the server are already used by another program, so Router Hub cannot take them. Nothing was changed. Details:"
+            echo "$busy"
+            exit 1
+          fi
+          echo "Ports 80 and 443 are free."
+          EOF
 
       - name: Make sure Docker is installed on the server
         run: |
