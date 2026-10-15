@@ -79,8 +79,9 @@ Every push to `main` builds a container image, pushes it to GitHub's registry (g
 the server to it. There is no test stage. The gate is the stack's health check: a release that does
 not come up healthy is replaced by the image that was running before, and the run is marked failed.
 
-The server runs three containers (`deploy/docker-compose.yml`): the app, MongoDB, and Caddy in front
-for HTTPS. The database is not reachable from outside. Installers and the database live in Docker
+The server runs the app and MongoDB as containers (`deploy/docker-compose.yml`), plus Caddy in front
+for HTTPS when a domain is configured. Before changing anything, each run checks that the ports it
+needs are not held by another program on the server, so it never collides with other sites there. The database is not reachable from outside. Installers and the database live in Docker
 volumes (`routerhub_storage`, `routerhub_mongo-data`), so they survive every deployment.
 
 ### Server, once
@@ -103,7 +104,8 @@ Repository > Settings > Secrets and variables > Actions > New repository secret.
 | `SSH_HOST` | yes | Server IP address or hostname |
 | `SSH_USER` | yes | SSH username, for example `root` |
 | `SSH_PASSWORD` | yes | That user's SSH password |
-| `DOMAIN` | no | For example `routers.example.com`. Turns on HTTPS with automatic certificates. Its DNS record must already point at the server. Without it the app is served over plain HTTP on the server's address. |
+| `DOMAIN` | no | For example `routers.example.com`. Turns on HTTPS with automatic certificates; needs ports 80 and 443 free and the domain's DNS pointing at the server. Without it the app is served over plain HTTP at `http://<server>:8080`. |
+| `HTTP_PORT` | no | Without a domain, the port the app is served on (default `8080`) |
 | `SSH_PORT` | no | Only if SSH is not on port 22 |
 | `SSH_KNOWN_HOSTS` | no | Output of `ssh-keyscan <server>`. Pins the server's identity; without it the key is accepted as found on each run. |
 

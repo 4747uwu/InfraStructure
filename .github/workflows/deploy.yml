@@ -85,6 +85,7 @@ jobs:
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
       DOMAIN: ${{ secrets.DOMAIN }}
+      HTTP_PORT: ${{ secrets.HTTP_PORT }} # without a domain, the app's public port (default 8080)
       # Read by `sshpass -e`, so the password never appears on a command line.
       SSHPASS: ${{ secrets.SSH_PASSWORD }}
     steps:
@@ -148,23 +149,32 @@ jobs:
             exit 1
           fi
 
-      - name: Check the server's web ports are free
+      - name: Check the server's ports are free
         run: |
-          # Caddy needs ports 80 and 443. If another program (an existing nginx, Apache or
-          # another site) already holds them, stop here before anything on the server changes.
-          sshpass -e ssh server 'bash -s' <<'EOF'
+          # With a domain the HTTPS proxy needs 80 and 443; without one the app needs HTTP_PORT.
+          # If another program already holds a needed port, stop before anything on the server changes.
+          if [ -n "$DOMAIN" ]; then ports="80 443"; else ports="${HTTP_PORT:-8080}"; fi
+          sshpass -e ssh server "bash -s -- $ports" <<'EOF'
           set -uo pipefail
-          if command -v docker > /dev/null 2>&1 && [ -n "$(docker ps -q --filter label=com.docker.compose.project=routerhub --filter label=com.docker.compose.service=caddy 2>/dev/null)" ]; then
-            echo "Ports 80 and 443 are held by this app's own proxy."
-            exit 0
-          fi
-          busy="$(ss -ltnpH 2>/dev/null | awk '$4 ~ /:(80|443)$/')"
-          if [ -n "$busy" ]; then
-            echo "::error::Ports 80/443 on the server are already used by another program, so Router Hub cannot take them. Nothing was changed. Details:"
-            echo "$busy"
+          # Ports published by this app's own containers (from an earlier deployment) are fine.
+          ours="$(docker ps --filter label=com.docker.compose.project=routerhub --format '{{.Ports}}' 2>/dev/null || true)"
+          blocked=""
+          for port in "$@"; do
+            if printf '%s\n' "$ours" | grep -q ":${port}->"; then
+              echo "Port $port is already Router Hub's own."
+              continue
+            fi
+            busy="$(ss -ltnpH "sport = :$port" 2>/dev/null)"
+            if [ -n "$busy" ]; then
+              blocked="$blocked $port"
+              printf '%s\n' "$busy"
+            fi
+          done
+          if [ -n "$blocked" ]; then
+            echo "::error::Port(s)$blocked on the server are already used by another program (details above). Nothing was changed. Without a domain, set the HTTP_PORT secret to a free port."
             exit 1
           fi
-          echo "Ports 80 and 443 are free."
+          echo "Port(s) $* can be used."
           EOF
 
       - name: Make sure Docker is installed on the server
@@ -194,11 +204,21 @@ jobs:
           {
             echo "IMAGE=$IMAGE"
             echo "IMAGE_TAG=$TAG"
-            echo "SITE_ADDRESS=${DOMAIN:-:80}"
+            echo "HTTP_PORT=${HTTP_PORT:-8080}"
+            if [ -n "$DOMAIN" ]; then
+              # HTTPS through Caddy; the app's own port is reachable from the server only.
+              echo "COMPOSE_PROFILES=https"
+              echo "SITE_ADDRESS=$DOMAIN"
+              echo "APP_BIND=127.0.0.1"
+            else
+              echo "APP_BIND=0.0.0.0"
+            fi
           } > .env.next
           {
             echo "PUBLIC_BASE_URL=${DOMAIN:+https://$DOMAIN}"
             echo "SECURE_COOKIES=$([ -n "$DOMAIN" ] && echo true || echo false)"
+            # Only trust forwarded client addresses when Caddy is actually in front.
+            echo "TRUST_PROXY=$([ -n "$DOMAIN" ] && echo 1)"
           } > app.env
 
       - name: Upload stack files
@@ -223,12 +243,12 @@ jobs:
 
       - name: Check the site from outside
         run: |
-          if [ -n "$DOMAIN" ]; then url="https://$DOMAIN"; else url="http://$SSH_HOST"; fi
+          if [ -n "$DOMAIN" ]; then url="https://$DOMAIN"; else url="http://$SSH_HOST:${HTTP_PORT:-8080}"; fi
           # A first deployment with a domain needs a moment to obtain its certificate.
           if curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --max-time 10 "$url/api/health" > /dev/null; then
             echo "The site answers at $url"
           else
-            echo "::error::The containers are healthy but $url does not answer. Check that ports 80 and 443 are open and that the domain points at the server."
+            echo "::error::The containers are healthy but $url does not answer from outside. Check the server's firewall (for example a DigitalOcean cloud firewall) allows that port, and that any domain points at the server."
             exit 1
           fi
 
@@ -238,9 +258,11 @@ jobs:
           TAG: ${{ steps.ref.outputs.tag }}
           OUTCOME: ${{ job.status }}
         run: |
+          if [ -n "$DOMAIN" ]; then url="https://$DOMAIN"; else url="http://$SSH_HOST:${HTTP_PORT:-8080}"; fi
           {
             echo "### Deployment: $OUTCOME"
             echo ""
+            echo "- Address: $url"
             echo "- Image tag: \`$TAG\`"
             echo "- Commit: \`${GITHUB_SHA::7}\`"
             echo "- To return to this release later: run this workflow manually with image tag \`$TAG\`."

@@ -1,7 +1,7 @@
 # Router Hub production stack. Uploaded to the server by the Deploy workflow.
 #
-#   .env      IMAGE, IMAGE_TAG, SITE_ADDRESS   (written by the workflow)
-#   app.env       address settings for the app (written by the workflow)
+#   .env          image, port and proxy choice  (written by the workflow)
+#   app.env       address settings for the app  (written by the workflow)
 #   accounts.env  first-start account seeds, hashes only (from the repository)
 
 name: routerhub
@@ -41,7 +41,10 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: routerhub
-      TRUST_PROXY: "1"
+    # Without a domain the app is reached directly on HTTP_PORT. With one, the port is
+    # bound to localhost only and the public entrance is Caddy below.
+    ports:
+      - "${APP_BIND:-0.0.0.0}:${HTTP_PORT:-8080}:4600"
     volumes:
       - storage:/app/storage
     security_opt:
@@ -49,9 +52,11 @@ services:
     stop_grace_period: 30s
     logging: *logging
 
-  # TLS termination. With a domain it obtains and renews certificates by itself.
+  # HTTPS entrance, started only when a domain is configured (COMPOSE_PROFILES=https).
+  # It needs ports 80 and 443 and obtains and renews its certificates by itself.
   caddy:
     image: caddy:2-alpine
+    profiles: ["https"]
     restart: unless-stopped
     depends_on:
       app:
@@ -61,7 +66,7 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      SITE_ADDRESS: ${SITE_ADDRESS}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
