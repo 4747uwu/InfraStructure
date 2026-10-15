@@ -12,7 +12,13 @@ export const METRICS = [
 ];
 
 const STATUS_COLOR = { warning: 'var(--viz-serious)', critical: 'var(--viz-critical)' };
-export const LIMITS = { cpu: [90, 97], mem: [90, 95], disk: [85, 95] };
+export const LIMITS = { cpu: [90, 97], mem: [90, 95], disk: [85, 93] };
+
+// Storage turns critical at the alert threshold set in Settings, so the page and the alerts agree.
+export function setStorageThreshold(threshold) {
+  if (!Number.isFinite(threshold)) return;
+  LIMITS.disk = [Math.min(85, threshold - 1), threshold];
+}
 
 export function levelOf(metric, value) {
   if (value === null || value === undefined) return null;

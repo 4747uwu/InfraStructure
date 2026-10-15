@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useOutlet } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { setStorageThreshold } from './charts.jsx';
+import { AlertsBell } from './Alerts.jsx';
 import { ease, Logo, spring } from './ui.jsx';
 
 function Tab({ to, icon: Icon, active, children }) {
@@ -62,7 +64,10 @@ function Account() {
 }
 
 export default function Shell() {
-  const { isMaster } = useAuth();
+  const { isMaster, app } = useAuth();
+  // Keep the charts' storage colouring in step with the alert threshold set in Settings.
+  // Set during render so the very first paint of any chart already uses it.
+  setStorageThreshold(app?.storageThreshold);
   const location = useLocation();
   const outlet = useOutlet();
   const path = location.pathname;
@@ -96,7 +101,10 @@ export default function Shell() {
           )}
         </nav>
 
-        <Account />
+        <div className="nav-right">
+          <AlertsBell />
+          <Account />
+        </div>
       </header>
 
       <AnimatePresence mode="wait" initial={false}>

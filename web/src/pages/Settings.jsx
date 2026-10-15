@@ -1,4 +1,4 @@
-import { Check, KeyRound, Lock, Terminal, UserRound } from 'lucide-react';
+import { BellRing, Check, KeyRound, Lock, Terminal, UserRound } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
@@ -144,6 +144,154 @@ function AccountSheet({ account, onClose, onSaved }) {
   );
 }
 
+function Toggle({ id, checked, onChange, label }) {
+  return (
+    <label className="toggle" htmlFor={id}>
+      <input id={id} type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span className="toggle-track" aria-hidden="true">
+        <span className="toggle-thumb" />
+      </span>
+      <span className="toggle-label">{label}</span>
+    </label>
+  );
+}
+
+// Alert threshold and the two delivery channels. Secrets are write-only: the page only
+// knows whether one is saved, and an empty field keeps the saved value.
+function Notifications({ value, onSaved }) {
+  const toast = useToast();
+  const [threshold, setThreshold] = useState(value.storageThreshold);
+  const [email, setEmail] = useState({ ...value.email, password: '', to: value.email.to.join(', ') });
+  const [telegram, setTelegram] = useState({ ...value.telegram, botToken: '' });
+  const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setThreshold(value.storageThreshold);
+    setEmail({ ...value.email, password: '', to: value.email.to.join(', ') });
+    setTelegram({ ...value.telegram, botToken: '' });
+  }, [value]);
+
+  const setE = (key) => (e) => setEmail((x) => ({ ...x, [key]: e.target.value }));
+  const setT = (key) => (e) => setTelegram((x) => ({ ...x, [key]: e.target.value }));
+
+  async function save(e) {
+    e?.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const d = await api('/settings/notifications', {
+        method: 'PUT',
+        body: {
+          storageThreshold: Number(threshold),
+          email: { enabled: email.enabled, host: email.host, port: Number(email.port), secure: email.secure, user: email.user, password: email.password, from: email.from, to: email.to },
+          telegram: { enabled: telegram.enabled, botToken: telegram.botToken, chatId: telegram.chatId },
+        },
+      });
+      toast('Alert settings saved');
+      onSaved(d.notifications);
+      setBusy(false);
+      return true;
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+      return false;
+    }
+  }
+
+  async function test(channel) {
+    setTesting(channel);
+    // Test what is on screen: save first.
+    if (await save()) {
+      try {
+        await api('/settings/notifications/test', { method: 'POST', body: { channel } });
+        toast(channel === 'email' ? 'Test email sent' : 'Test message sent to Telegram');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+    setTesting('');
+  }
+
+  return (
+    <form onSubmit={save}>
+      <div className="row row-form">
+        <Field label="Storage alert at" hint="An alert opens when a server's DICOM storage reaches this, and resolves once it is a point below.">
+          {(id) => (
+            <div className="threshold-input">
+              <input id={id} className="input" type="number" min={50} max={99} value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+              <span>% used</span>
+            </div>
+          )}
+        </Field>
+      </div>
+
+      <div className="row row-stack">
+        <Toggle id="notify-email" checked={email.enabled} onChange={(v) => setEmail((x) => ({ ...x, enabled: v }))} label="Email" />
+        <AnimatePresence initial={false}>
+          {email.enabled && (
+            <motion.div className="channel-fields" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3, ease }}>
+              <div className="channel-grid">
+                <Field label="SMTP server">{(id) => <input id={id} className="input" placeholder="smtp.gmail.com" value={email.host} onChange={setE('host')} />}</Field>
+                <Field label="Port">{(id) => <input id={id} className="input" type="number" value={email.port} onChange={setE('port')} />}</Field>
+                <Field label="Username">{(id) => <input id={id} className="input" autoComplete="off" value={email.user} onChange={setE('user')} />}</Field>
+                <Field label="Password" hint={email.passwordSet ? 'Saved. Leave empty to keep it.' : 'For Gmail, an app password.'}>
+                  {(id) => <input id={id} className="input" type="password" autoComplete="new-password" placeholder={email.passwordSet ? '••••••••' : ''} value={email.password} onChange={setE('password')} />}
+                </Field>
+                <Field label="From">{(id) => <input id={id} className="input" placeholder="alerts@yourcompany.com" value={email.from} onChange={setE('from')} />}</Field>
+                <Field label="Send to" hint="Separate addresses with commas.">
+                  {(id) => <input id={id} className="input" placeholder="you@yourcompany.com" value={email.to} onChange={setE('to')} />}
+                </Field>
+              </div>
+              <div className="channel-foot">
+                <label className="inline-check" htmlFor="smtp-secure">
+                  <input id="smtp-secure" type="checkbox" checked={email.secure} onChange={(e) => setEmail((x) => ({ ...x, secure: e.target.checked }))} />
+                  Use SSL from the start (port 465)
+                </label>
+                <Button variant="tinted" size="sm" busy={testing === 'email'} onClick={() => test('email')}>
+                  Send Test Email
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="row row-stack">
+        <Toggle id="notify-telegram" checked={telegram.enabled} onChange={(v) => setTelegram((x) => ({ ...x, enabled: v }))} label="Telegram" />
+        <AnimatePresence initial={false}>
+          {telegram.enabled && (
+            <motion.div className="channel-fields" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3, ease }}>
+              <div className="channel-grid">
+                <Field label="Bot token" hint={telegram.tokenSet ? 'Saved. Leave empty to keep it.' : 'From @BotFather, after /newbot.'}>
+                  {(id) => <input id={id} className="input" type="password" autoComplete="off" placeholder={telegram.tokenSet ? '••••••••' : '123456789:AA…'} value={telegram.botToken} onChange={setT('botToken')} />}
+                </Field>
+                <Field label="Chat ID" hint="Add the bot to your group, send it a message, then read the chat id from api.telegram.org/bot<token>/getUpdates.">
+                  {(id) => <input id={id} className="input" placeholder="-1001234567890" value={telegram.chatId} onChange={setT('chatId')} />}
+                </Field>
+              </div>
+              <div className="channel-foot">
+                <span />
+                <Button variant="tinted" size="sm" busy={testing === 'telegram'} onClick={() => test('telegram')}>
+                  Send Test Message
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="row channel-save">
+        {error ? <p className="form-error">{error}</p> : <span className="field-hint">Alerts always appear under the bell in the app, with or without these.</span>}
+        <Button type="submit" busy={busy}>
+          Save
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function DeployToken({ status, baseUrl, onChanged }) {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
@@ -267,7 +415,11 @@ export default function Settings() {
             ))}
           </Section>
 
-          <Section index={2} icon={Terminal} tint="green" title="Publish script" description="Builds a router with the same steps as build.bat, then uploads the installer to the matching client.">
+          <Section index={2} icon={BellRing} tint="red" title="Alerts" description="Server alerts appear under the bell in the app. Add email or Telegram to be told even when Router Hub is closed.">
+            <Notifications value={data.notifications} onSaved={(n) => (setData((d) => ({ ...d, notifications: n })), refresh())} />
+          </Section>
+
+          <Section index={3} icon={Terminal} tint="green" title="Publish script" description="Builds a router with the same steps as build.bat, then uploads the installer to the matching client.">
             <DeployToken status={data.deployToken} baseUrl={app?.baseUrl || window.location.origin} onChanged={load} />
           </Section>
         </div>

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireMaster, requireUser } from '../auth.js';
-import { clients, metrics, servers, toObjectId } from '../db.js';
+import { evaluateReport, storageThreshold } from '../alerts.js';
+import { alerts, clients, getSettings, metrics, servers, toObjectId } from '../db.js';
 import { baseUrl, cleanText, HttpError } from '../http.js';
 import { newToken, sha256Hex } from '../security.js';
 
@@ -11,14 +12,16 @@ import { newToken, sha256Hex } from '../security.js';
 const router = Router();
 
 export const RETENTION_DAYS = 30;
-const MIN_REPORT_GAP_MS = 10_000;
+// Overridable for tests only.
+const MIN_REPORT_GAP_MS = Number(process.env.REPORT_MIN_GAP_MS ?? 10_000);
 
-// Thresholds that turn a figure into a warning or a critical alert (percent used).
-const LIMITS = {
-  storage: { warning: 85, critical: 95 },
+// Thresholds that colour a figure on the page (percent used). Storage turns critical at the
+// alert threshold set in Settings (93% unless changed); notifications are handled in alerts.js.
+const limitsFor = (threshold) => ({
+  storage: { warning: Math.min(85, threshold - 1), critical: threshold },
   memory: { warning: 90, critical: 95 },
   cpu: { warning: 90, critical: 97 },
-};
+});
 
 // ---- report validation ------------------------------------------------------
 
@@ -147,7 +150,8 @@ function level(value, limits) {
   return null;
 }
 
-function alertsOf(server, status) {
+function alertsOf(server, status, threshold) {
+  const LIMITS = limitsFor(threshold);
   const out = [];
   if (status === 'offline') out.push({ level: 'critical', metric: 'status', message: 'Not reporting' });
   const s = server.summary;
@@ -168,7 +172,7 @@ function alertsOf(server, status) {
   return out;
 }
 
-function serverView(server, { full = false } = {}) {
+function serverView(server, { full = false, threshold }) {
   const status = statusOf(server);
   return {
     id: String(server._id),
@@ -178,7 +182,7 @@ function serverView(server, { full = false } = {}) {
     createdAt: server.createdAt,
     lastReportAt: server.lastReportAt || null,
     status,
-    alerts: alertsOf(server, status),
+    alerts: alertsOf(server, status, threshold),
     summary: server.summary || null,
     host: server.last?.host || null,
     agentVersion: server.last?.agentVersion || null,
@@ -245,18 +249,26 @@ router.post('/agent/report', async (req, res) => {
     disk: summary.storagePct,
     studies: summary.studies,
   });
+  // Alerts never make a report fail; a problem there is logged and retried on the next report.
+  try {
+    await evaluateReport({ ...server, last: report }, summary);
+  } catch (err) {
+    console.error('  Alert evaluation failed:', err.message);
+  }
   res.json({ ok: true, interval: report.interval });
 });
 
 // ---- servers --------------------------------------------------------------------
 
 router.get('/servers', requireUser, async (_req, res) => {
+  const threshold = storageThreshold(await getSettings());
   const all = await servers().find().sort({ name: 1 }).collation({ locale: 'en', strength: 2 }).toArray();
-  res.json({ servers: all.map((s) => serverView(s)) });
+  res.json({ servers: all.map((s) => serverView(s, { threshold })) });
 });
 
 router.get('/servers/:id', requireUser, async (req, res) => {
-  res.json({ server: serverView(await findServer(req.params.id), { full: true }) });
+  const threshold = storageThreshold(await getSettings());
+  res.json({ server: serverView(await findServer(req.params.id), { full: true, threshold }) });
 });
 
 const RANGES = {
@@ -293,7 +305,8 @@ router.post('/servers', requireMaster, async (req, res) => {
   const { token, tokenHash, tokenHint } = newAgentToken();
   const doc = { name: fields.name, clientId: fields.clientId ?? null, tokenHash, tokenHint, createdBy: req.auth.username, createdAt: new Date(), lastReportAt: null };
   const { insertedId } = await servers().insertOne(doc);
-  res.status(201).json({ server: serverView({ ...doc, _id: insertedId }), token, installCommand: installCommand(req, token) });
+  const threshold = storageThreshold(await getSettings());
+  res.status(201).json({ server: serverView({ ...doc, _id: insertedId }, { threshold }), token, installCommand: installCommand(req, token) });
 });
 
 router.patch('/servers/:id', requireMaster, async (req, res) => {
@@ -316,6 +329,46 @@ router.delete('/servers/:id', requireMaster, async (req, res) => {
   const server = await findServer(req.params.id);
   await servers().deleteOne({ _id: server._id });
   await metrics().deleteMany({ serverId: server._id });
+  await alerts().deleteMany({ serverId: server._id });
+  res.json({ ok: true });
+});
+
+// ---- alerts -------------------------------------------------------------------------
+
+// Open alerts (newest first), or the last 90 days with ?state=all.
+router.get('/alerts', requireUser, async (req, res) => {
+  const filter = req.query.state === 'all' ? {} : { open: true };
+  const list = await alerts().find(filter).sort({ openedAt: -1 }).limit(300).toArray();
+  const names = new Map(
+    (await servers().find({ _id: { $in: [...new Set(list.map((a) => a.serverId))] } }, { projection: { name: 1, clientId: 1 } }).toArray()).map((s) => [String(s._id), s]),
+  );
+  res.json({
+    alerts: list.map((a) => ({
+      id: String(a._id),
+      serverId: String(a.serverId),
+      serverName: names.get(String(a.serverId))?.name || 'Removed server',
+      clientId: names.get(String(a.serverId))?.clientId ? String(names.get(String(a.serverId)).clientId) : null,
+      key: a.key,
+      level: a.level,
+      message: a.message,
+      value: a.value,
+      open: a.open,
+      openedAt: a.openedAt,
+      resolvedAt: a.resolvedAt,
+      acknowledgedAt: a.acknowledgedAt,
+      acknowledgedBy: a.acknowledgedBy,
+      notified: a.notifyResults || null,
+    })),
+  });
+});
+
+// Acknowledging says someone is on it; the alert still resolves by itself when the condition clears.
+router.post('/alerts/:id/acknowledge', requireUser, async (req, res) => {
+  const result = await alerts().updateOne(
+    { _id: toObjectId(req.params.id), open: true },
+    { $set: { acknowledgedAt: new Date(), acknowledgedBy: req.auth.username } },
+  );
+  if (!result.matchedCount) throw new HttpError(404, 'This alert is no longer open.');
   res.json({ ok: true });
 });
 

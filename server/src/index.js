@@ -1,3 +1,4 @@
+import { startAlertSweeper } from './alerts.js';
 import { createApp } from './app.js';
 import { bootstrap } from './bootstrap.js';
 import { config } from './config.js';
@@ -13,6 +14,7 @@ try {
 }
 
 await bootstrap();
+startAlertSweeper();
 
 const server = createApp().listen(config.port, () => {
   console.log(`\n  Router Hub is running  ->  http://localhost:${config.port}`);

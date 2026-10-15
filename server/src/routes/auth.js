@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { storageThreshold } from '../alerts.js';
 import { endSession, startSession } from '../auth.js';
 import { config } from '../config.js';
 import { getSettings, users } from '../db.js';
@@ -40,6 +41,7 @@ router.get('/me', async (req, res) => {
       baseUrl: baseUrl(req),
       downloadPasswordSet: Boolean(s?.downloadPassword),
       maxUploadBytes: config.maxUploadBytes,
+      storageThreshold: storageThreshold(s),
     },
   });
 });

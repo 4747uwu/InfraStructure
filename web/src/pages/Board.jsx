@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, Trash } from 'lucide-react';
+import { CalendarClock, Plus, Trash, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -35,12 +35,119 @@ function toColumns(tasks) {
   return cols;
 }
 
+// Date filter presets, per field.
+const DATE_PRESETS = {
+  created: [
+    { id: 'any', label: 'Any time' },
+    { id: 'today', label: 'Today' },
+    { id: '7d', label: 'Last 7 days' },
+    { id: '30d', label: 'Last 30 days' },
+    { id: 'custom', label: 'Custom range…' },
+  ],
+  due: [
+    { id: 'any', label: 'Any time' },
+    { id: 'overdue', label: 'Overdue' },
+    { id: 'today', label: 'Due today' },
+    { id: 'next7', label: 'Next 7 days' },
+    { id: 'none', label: 'No due date' },
+    { id: 'custom', label: 'Custom range…' },
+  ],
+};
+
+function matchesDate(task, field, preset, from, to) {
+  if (preset === 'any') return true;
+  const now = Date.now();
+  const today = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+  const day = 24 * 3600e3;
+  const value = field === 'created' ? task.createdAt : task.dueAt;
+  if (preset === 'none') return !task.dueAt;
+  if (!value) return false;
+  const at = new Date(value).getTime();
+  switch (preset) {
+    case 'today':
+      return at >= today && at < today + day;
+    case '7d':
+      return at >= now - 7 * day;
+    case '30d':
+      return at >= now - 30 * day;
+    case 'overdue':
+      return at < now && task.status !== 'completed';
+    case 'next7':
+      return at >= now && at <= now + 7 * day;
+    case 'custom':
+      return (!from || at >= new Date(from).getTime()) && (!to || at <= new Date(to).getTime());
+    default:
+      return true;
+  }
+}
+
 const columnOf = (cols, id) => (cols[id] ? id : Object.keys(cols).find((k) => cols[k].includes(id)));
 
+export const PRIORITIES = [
+  { id: 'urgent', label: 'Urgent', marks: '!!!' },
+  { id: 'high', label: 'High', marks: '!!' },
+  { id: 'medium', label: 'Medium', marks: '!' },
+  { id: 'low', label: 'Low', marks: '' },
+];
+const priorityOf = (id) => PRIORITIES.find((p) => p.id === id) || PRIORITIES[2];
+
+const DAY = 24 * 3600e3;
+const startOfToday = () => new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+
+function dueState(task) {
+  if (!task.dueAt) return null;
+  const due = new Date(task.dueAt).getTime();
+  const now = Date.now();
+  if (task.status === 'completed') return 'done';
+  if (due < now) return 'overdue';
+  if (due - now < DAY) return 'soon';
+  return 'later';
+}
+
+function formatDue(iso) {
+  const d = new Date(iso);
+  const today = startOfToday();
+  const day = new Date(d).setHours(0, 0, 0, 0);
+  const time = d.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' });
+  if (day === today) return `Today ${time}`;
+  if (day === today + DAY) return `Tomorrow ${time}`;
+  if (day === today - DAY) return `Yesterday ${time}`;
+  return `${d.toLocaleDateString('en', { day: 'numeric', month: 'short' })} ${time}`;
+}
+
+function PriorityTag({ priority }) {
+  const p = priorityOf(priority);
+  if (p.id === 'medium' || p.id === 'low') return null; // only the ones that need attention get a tag
+  return (
+    <span className={`tag tag-priority is-${p.id}`}>
+      <span className="priority-marks" aria-hidden="true">
+        {p.marks}
+      </span>
+      {p.label}
+    </span>
+  );
+}
+
+function DueTag({ task }) {
+  const state = dueState(task);
+  if (!state) return null;
+  const label = state === 'overdue' ? `Overdue · ${formatDue(task.dueAt)}` : state === 'done' ? `Was due ${formatDue(task.dueAt)}` : `Due ${formatDue(task.dueAt)}`;
+  return (
+    <span className={`tag tag-due is-${state}`} title={new Date(task.dueAt).toLocaleString()}>
+      <CalendarClock size={12} strokeWidth={2.4} />
+      {label}
+    </span>
+  );
+}
+
 function TaskTags({ task, client }) {
-  if (!client && !task.platform) return null;
+  const priority = priorityOf(task.priority);
+  const showPriority = priority.id === 'urgent' || priority.id === 'high';
+  if (!client && !task.platform && !showPriority && !task.dueAt) return null;
   return (
     <div className="task-tags">
+      <PriorityTag priority={task.priority} />
+      <DueTag task={task} />
       {client && (
         <span className="tag tag-client">
           <AppIcon name={client.name} size={16} />
@@ -59,7 +166,7 @@ function TaskTags({ task, client }) {
 
 function TaskCard({ task, client, overlay = false, onOpen }) {
   return (
-    <div className={`task-card ${overlay ? 'is-lifted' : ''} is-${task.status}`} onClick={onOpen}>
+    <div className={`task-card ${overlay ? 'is-lifted' : ''} is-${task.status} priority-${task.priority || 'medium'}`} onClick={onOpen}>
       <TaskTags task={task} client={client} />
       <h4>{task.title}</h4>
       {task.details && <p>{task.details}</p>}
@@ -122,12 +229,20 @@ function Column({ column, ids, tasks, clients, onAdd, onOpen }) {
   );
 }
 
+// ISO time -> the local "YYYY-MM-DDTHH:mm" a datetime-local input expects.
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
 function TaskSheet({ draft, clients, onClose, onSaved, onDeleted }) {
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
   const [clientId, setClientId] = useState('');
   const [platform, setPlatform] = useState('none');
   const [status, setStatus] = useState('pending');
+  const [priority, setPriority] = useState('medium');
+  const [due, setDue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -140,6 +255,8 @@ function TaskSheet({ draft, clients, onClose, onSaved, onDeleted }) {
     setClientId(draft.clientId || '');
     setPlatform(draft.platform || 'none');
     setStatus(draft.status || 'pending');
+    setPriority(draft.priority || 'medium');
+    setDue(draft.dueAt ? toLocalInput(draft.dueAt) : '');
     setError('');
     setBusy(false);
     setConfirmDelete(false);
@@ -149,7 +266,15 @@ function TaskSheet({ draft, clients, onClose, onSaved, onDeleted }) {
     e.preventDefault();
     setBusy(true);
     setError('');
-    const body = { title, details, clientId: clientId || null, platform: platform === 'none' ? null : platform, status };
+    const body = {
+      title,
+      details,
+      clientId: clientId || null,
+      platform: platform === 'none' ? null : platform,
+      status,
+      priority,
+      dueAt: due ? new Date(due).toISOString() : null,
+    };
     try {
       const { task } = isNew ? await api('/tasks', { method: 'POST', body }) : await api(`/tasks/${draft.id}`, { method: 'PATCH', body });
       onSaved(task, isNew);
@@ -204,6 +329,22 @@ function TaskSheet({ draft, clients, onClose, onSaved, onDeleted }) {
           />
         </div>
         <div className="field">
+          <span className="field-label">Priority</span>
+          <Segmented label="Priority" size="sm" value={priority} onChange={setPriority} options={PRIORITIES.map((p) => ({ id: p.id, label: p.label }))} />
+        </div>
+        <Field label="Due" hint="Optional. Shown on the card, red once it has passed.">
+          {(id) => (
+            <div className="due-input">
+              <input id={id} className="input" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+              {due && (
+                <button type="button" className="icon-btn" onClick={() => setDue('')} aria-label="Clear the due date">
+                  <X size={16} strokeWidth={2.4} />
+                </button>
+              )}
+            </div>
+          )}
+        </Field>
+        <div className="field">
           <span className="field-label">Status</span>
           <Segmented label="Status" size="sm" value={status} onChange={setStatus} options={COLUMNS.map((c) => ({ id: c.id, label: c.label }))} />
         </div>
@@ -237,6 +378,18 @@ export default function Board() {
   const dragFrom = useRef(null);
   const lastDrop = useRef(0); // the click that ends a drag must not open the card
   const filter = params.get('client') || 'all';
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [dateField, setDateField] = useState('created');
+  const [datePreset, setDatePreset] = useState('any');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const filtering = priorityFilter !== 'all' || datePreset !== 'any';
+  const clearFilters = () => {
+    setPriorityFilter('all');
+    setDatePreset('any');
+    setFrom('');
+    setTo('');
+  };
 
   const load = useCallback(async () => {
     try {
@@ -262,9 +415,15 @@ export default function Board() {
   // Columns shown after the client filter; drag and drop works on the filtered view.
   const visible = useMemo(() => {
     if (!columns) return null;
-    if (filter === 'all') return columns;
-    return Object.fromEntries(Object.entries(columns).map(([k, ids]) => [k, ids.filter((id) => tasks[id]?.clientId === filter)]));
-  }, [columns, filter, tasks]);
+    const keep = (t) =>
+      t &&
+      (filter === 'all' || t.clientId === filter) &&
+      (priorityFilter === 'all' || (t.priority || 'medium') === priorityFilter) &&
+      matchesDate(t, dateField, datePreset, from, to);
+    return Object.fromEntries(Object.entries(columns).map(([k, ids]) => [k, ids.filter((id) => keep(tasks[id]))]));
+  }, [columns, filter, tasks, priorityFilter, dateField, datePreset, from, to]);
+  const shownCount = visible ? Object.values(visible).reduce((n, ids) => n + ids.length, 0) : 0;
+  const totalCount = Object.keys(tasks || {}).length;
 
   function onDragStart({ active }) {
     setActiveId(active.id);
@@ -365,6 +524,55 @@ export default function Board() {
               {counts[c.id] ? <span className="chip-count">{counts[c.id]}</span> : null}
             </button>
           ))}
+        </div>
+      )}
+
+      {tasks && (
+        <div className="filter-row">
+          <Segmented
+            label="Priority"
+            size="sm"
+            value={priorityFilter}
+            onChange={setPriorityFilter}
+            options={[{ id: 'all', label: 'Any priority' }, ...PRIORITIES.map((p) => ({ id: p.id, label: p.label }))]}
+          />
+          <div className="date-filter">
+            <Segmented
+              label="Filter by"
+              size="sm"
+              value={dateField}
+              onChange={(v) => {
+                setDateField(v);
+                setDatePreset('any');
+              }}
+              options={[
+                { id: 'created', label: 'Created' },
+                { id: 'due', label: 'Due' },
+              ]}
+            />
+            <select id="date-preset" className="input select select-sm" aria-label="Date range" value={datePreset} onChange={(e) => setDatePreset(e.target.value)}>
+              {DATE_PRESETS[dateField].map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            {datePreset === 'custom' && (
+              <span className="date-range">
+                <input id="date-from" className="input input-sm" type="datetime-local" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <span>to</span>
+                <input id="date-to" className="input input-sm" type="datetime-local" aria-label="To" value={to} onChange={(e) => setTo(e.target.value)} />
+              </span>
+            )}
+          </div>
+          {filtering && (
+            <span className="filter-summary">
+              {shownCount} of {plural(totalCount, 'card')}
+              <button type="button" className="link" onClick={clearFilters}>
+                Clear
+              </button>
+            </span>
+          )}
         </div>
       )}
 

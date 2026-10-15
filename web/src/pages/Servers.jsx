@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import { AlertRow, useOpenAlerts } from '../components/Alerts.jsx';
 import { Rings, RingLegend, StatusLabel } from '../components/charts.jsx';
 import { useToast } from '../components/toast.jsx';
 import { AppIcon, Button, CopyButton, ease, Field, Sheet } from '../components/ui.jsx';
@@ -266,6 +267,7 @@ export default function Servers() {
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
   const [install, setInstall] = useState(null);
+  const [openAlerts] = useOpenAlerts();
 
   const load = useCallback(
     () =>
@@ -325,6 +327,20 @@ export default function Servers() {
           <Tile label="Studies stored" value={stats.studies.toLocaleString()} detail="Across every Orthanc" />
           <Tile label="DICOM storage used" value={formatBytes(stats.used)} detail={stats.total ? `of ${formatBytes(stats.total)}` : ''} />
         </motion.div>
+      )}
+
+      {openAlerts.length > 0 && (
+        <section className="section alerts-panel">
+          <div className="section-head">
+            <h2>Open Alerts</h2>
+            <span className="section-count">{openAlerts.length}</span>
+          </div>
+          <ul className="inset-list alert-list-page">
+            {openAlerts.map((a) => (
+              <AlertRow key={a.id} alert={a} />
+            ))}
+          </ul>
+        </section>
       )}
 
       {!servers && !error && (

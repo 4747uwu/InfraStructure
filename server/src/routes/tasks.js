@@ -11,6 +11,7 @@ const router = Router();
 router.use('/tasks', requireUser);
 
 export const STATUSES = ['pending', 'in_progress', 'completed'];
+export const PRIORITIES = ['urgent', 'high', 'medium', 'low'];
 const GAP = 1024; // spacing between card positions; new positions go halfway between neighbours
 
 const view = (t) => ({
@@ -21,6 +22,8 @@ const view = (t) => ({
   order: t.order,
   clientId: t.clientId ? String(t.clientId) : null,
   platform: t.platform || null,
+  priority: t.priority || 'medium',
+  dueAt: t.dueAt || null,
   createdBy: t.createdBy,
   createdAt: t.createdAt,
   updatedBy: t.updatedBy,
@@ -51,6 +54,17 @@ async function parseFields(body, { partial }) {
     out.platform = body.platform ? normalizePlatform(body.platform) : null;
     if (body.platform && !out.platform) throw new HttpError(400, 'Platform must be windows, mac-arm or mac-intel.');
   }
+  if (!partial || body.priority !== undefined) {
+    out.priority = body.priority ?? 'medium';
+    if (!PRIORITIES.includes(out.priority)) throw new HttpError(400, 'Priority must be urgent, high, medium or low.');
+  }
+  if (body.dueAt !== undefined) {
+    if (body.dueAt === null || body.dueAt === '') out.dueAt = null;
+    else {
+      out.dueAt = new Date(body.dueAt);
+      if (Number.isNaN(out.dueAt.getTime())) throw new HttpError(400, 'The due date is not a valid date and time.');
+    }
+  }
   if (body.order !== undefined) {
     out.order = Number(body.order);
     if (!Number.isFinite(out.order)) throw new HttpError(400, 'Order must be a number.');
@@ -77,6 +91,8 @@ router.post('/tasks', async (req, res) => {
     status: fields.status,
     clientId: fields.clientId ?? null,
     platform: fields.platform ?? null,
+    priority: fields.priority,
+    dueAt: fields.dueAt ?? null,
     order: fields.order ?? (await bottomOf(fields.status)),
     createdBy: req.auth.username,
     createdAt: now,

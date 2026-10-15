@@ -30,6 +30,11 @@ export async function connect() {
     metrics().createIndex({ serverId: 1, at: 1 }),
     // Monitoring history is kept for 30 days, then MongoDB drops it.
     metrics().createIndex({ at: 1 }, { expireAfterSeconds: 30 * 24 * 3600 }),
+    // At most one open alert per server and condition.
+    alerts().createIndex({ serverId: 1, key: 1 }, { unique: true, partialFilterExpression: { open: true } }),
+    alerts().createIndex({ openedAt: -1 }),
+    // Resolved alerts are kept for 90 days of history; open ones (resolvedAt null) never expire.
+    alerts().createIndex({ resolvedAt: 1 }, { expireAfterSeconds: 90 * 24 * 3600 }),
   ]);
   return db;
 }
@@ -45,6 +50,7 @@ export const settings = () => db.collection('settings');
 export const tasks = () => db.collection('tasks');
 export const servers = () => db.collection('servers');
 export const metrics = () => db.collection('metrics');
+export const alerts = () => db.collection('alerts');
 
 export const SETTINGS_ID = 'main';
 export const getSettings = () => settings().findOne({ _id: SETTINGS_ID });
