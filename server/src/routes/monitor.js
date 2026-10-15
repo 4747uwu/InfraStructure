@@ -158,7 +158,9 @@ function alertsOf(server, status, threshold) {
   if (!s) return out;
   const add = (metric, value, label) => {
     const l = level(value, LIMITS[metric]);
-    if (l) out.push({ level: l, metric, message: `${label} at ${Math.round(value)}%` });
+    // One decimal for storage, so 92.8% is never shown as "93%" while it is still under a 93% threshold.
+    const shown = metric === 'storage' ? (Math.floor(value * 10) / 10).toFixed(1) : Math.round(value);
+    if (l) out.push({ level: l, metric, message: `${label} at ${shown}%` });
   };
   add('storage', s.storagePct, 'Storage');
   add('memory', s.memPct, 'Memory');

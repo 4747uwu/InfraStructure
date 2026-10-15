@@ -26,7 +26,9 @@ export function levelOf(metric, value) {
   return value >= crit ? 'critical' : value >= warn ? 'warning' : null;
 }
 
-export const fmtPct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v)}%`);
+// Storage keeps one decimal (rounded down), so 92.8% never reads as 93% under a 93% threshold.
+export const fmtPct = (v, metric) =>
+  v === null || v === undefined ? '—' : metric === 'disk' ? `${(Math.floor(v * 10) / 10).toFixed(1)}%` : `${Math.round(v)}%`;
 
 // Status always travels with an icon and a word, never colour alone.
 export function StatusLabel({ level, children }) {
@@ -47,7 +49,7 @@ export function Rings({ values, size = 104, animate = true }) {
   const gap = Math.max(2, size * 0.022);
   const order = ['disk', 'mem', 'cpu'];
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="rings" role="img" aria-label={order.map((id) => `${METRICS.find((m) => m.id === id).label} ${fmtPct(values[id])}`).join(', ')}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="rings" role="img" aria-label={order.map((id) => `${METRICS.find((m) => m.id === id).label} ${fmtPct(values[id], id)}`).join(', ')}>
       {order.map((id, i) => {
         const metric = METRICS.find((m) => m.id === id);
         const r = size / 2 - stroke / 2 - i * (stroke + gap);
@@ -91,7 +93,7 @@ export function RingLegend({ values, details = {}, large = false }) {
           <li key={id}>
             <span className="legend-key" style={{ background: level ? STATUS_COLOR[level] : metric.color }} />
             <span className="legend-label">{metric.label}</span>
-            <span className="legend-value">{fmtPct(values[id])}</span>
+            <span className="legend-value">{fmtPct(values[id], id)}</span>
             {level ? <StatusLabel level={level} /> : details[id] && <span className="legend-detail">{details[id]}</span>}
           </li>
         );
@@ -121,7 +123,7 @@ export function Meter({ usedBytes, totalBytes, metric = 'disk' }) {
           {formatBytes(usedBytes)} of {formatBytes(totalBytes)}
         </span>
         <span className="meter-pct">
-          {fmtPct(value)}
+          {fmtPct(value, metric)}
           <StatusLabel level={level} />
         </span>
       </div>
@@ -203,7 +205,7 @@ export function AreaChart({ metric, points, since, until, bucketMs, height = 150
       <figcaption>
         <span className="chart-key" style={{ background: m.color }} />
         <span className="chart-title">{m.label}</span>
-        <span className="chart-now">{last ? fmtPct(last.v) : '—'}</span>
+        <span className="chart-now">{last ? fmtPct(last.v, metric) : '—'}</span>
         <StatusLabel level={level} />
       </figcaption>
       {width > 0 && (
@@ -213,7 +215,7 @@ export function AreaChart({ metric, points, since, until, bucketMs, height = 150
             height={height}
             tabIndex={data.length ? 0 : -1}
             role="img"
-            aria-label={`${m.label} usage over time${last ? `, now ${fmtPct(last.v)}` : ''}. Use the arrow keys to read values.`}
+            aria-label={`${m.label} usage over time${last ? `, now ${fmtPct(last.v, metric)}` : ''}. Use the arrow keys to read values.`}
             onPointerMove={(e) => data.length && setHover(nearest(e.clientX, e.currentTarget.getBoundingClientRect()))}
             onPointerLeave={() => setHover(null)}
             onBlur={() => setHover(null)}
@@ -254,7 +256,7 @@ export function AreaChart({ metric, points, since, until, bucketMs, height = 150
               <>
                 <circle cx={x(last.t)} cy={y(last.v)} r="4" fill={m.color} stroke="var(--surface)" strokeWidth="2" />
                 <text x={x(last.t) + 9} y={y(last.v)} dy="0.32em" className="chart-end">
-                  {fmtPct(last.v)}
+                  {fmtPct(last.v, metric)}
                 </text>
               </>
             )}
@@ -272,7 +274,7 @@ export function AreaChart({ metric, points, since, until, bucketMs, height = 150
           </svg>
           {shown && (
             <div className="chart-tip" style={{ left: Math.min(Math.max(x(shown.t), 70), width - 70), top: Math.max(y(shown.v) - 12, 0) }}>
-              <strong>{fmtPct(shown.v)}</strong>
+              <strong>{fmtPct(shown.v, metric)}</strong>
               <span>
                 {new Date(shown.t).toLocaleString('en', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}
               </span>
