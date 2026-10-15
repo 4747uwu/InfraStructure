@@ -1,55 +1,95 @@
-import { ChevronRight, Package, Plus, Search } from 'lucide-react';
+import { Package, Plus, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { useToast } from '../components/toast.jsx';
-import { Avatar, Button, CopyButton, ease, Field, Sheet } from '../components/ui.jsx';
-import { plural, timeAgo } from '../format.js';
+import { AppIcon, Button, CopyButton, ease, Field, Segmented, Sheet, spring } from '../components/ui.jsx';
+import { gradientFor, plural, timeAgo } from '../format.js';
+import { PlatformIcon, PLATFORMS, platformById } from '../platforms.jsx';
 
-const grid = { show: { transition: { staggerChildren: 0.045 } } };
-const cell = {
-  hidden: { opacity: 0, y: 18, scale: 0.97 },
-  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.5, ease } },
+const shelf = { show: { transition: { staggerChildren: 0.06 } } };
+const rise = {
+  hidden: { opacity: 0, y: 24, scale: 0.97 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease } },
 };
 
-function ClientCard({ client, isMaster }) {
-  const current = client.current;
+const today = new Date().toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' });
+
+const linkFor = (platform, isMaster) => (isMaster ? platform.links.direct : platform.links.protected);
+const available = (client) => client.platforms.filter((p) => p.current);
+
+// App Store "Today" style card for a recent build.
+function FeatureCard({ client, isMaster }) {
+  const release = client.latest;
+  const platform = client.platforms.find((p) => p.id === release.platform);
+  const [a, b] = gradientFor(client.name);
   return (
-    <motion.div variants={cell} whileHover={{ y: -4 }} whileTap={{ scale: 0.985 }} transition={{ type: 'spring', stiffness: 400, damping: 28 }}>
-      <Link to={`/clients/${client.slug}`} className="card client-card">
-        <div className="client-card-top">
-          <Avatar name={client.name} size={52} />
-          {current && (
-            <div className="client-card-copy">
-              <CopyButton
-                variant="tinted"
-                size="sm"
-                label=""
-                text={isMaster ? client.links.direct : client.links.protected}
-                message={isMaster ? `${client.name}: direct link copied` : `${client.name}: protected link copied`}
-              />
-            </div>
-          )}
-        </div>
-        <h3>{client.name}</h3>
-        {current ? (
-          <p className="client-card-version">
-            <span className="version-chip">{current.version}</span>
-            <span>build {current.build}</span>
-          </p>
-        ) : (
-          <p className="client-card-version muted">No versions yet</p>
-        )}
-        <div className="client-card-foot">
-          <span>
-            {current ? `${plural(client.releaseCount, 'version')} · ${timeAgo(current.uploadedAt)}` : `Added ${timeAgo(client.createdAt)}`}
+    <motion.div variants={rise} className="feature-wrap" whileHover={{ y: -6 }} whileTap={{ scale: 0.97 }} transition={spring}>
+      <div className="feature-card" style={{ '--fa': a, '--fb': b }}>
+        {/* The whole card opens the client; the copy button sits above this layer. */}
+        <Link to={`/clients/${client.slug}`} className="feature-hit" aria-label={`Open ${client.name}`} />
+        <div className="feature-copy">
+          <span className="feature-eyebrow">
+            New build · {platformById(release.platform).label}
           </span>
-          <ChevronRight size={16} />
+          <h3>{client.name}</h3>
+          <p>Uploaded {timeAgo(release.uploadedAt)}</p>
         </div>
-      </Link>
+        <div className="feature-art" aria-hidden="true">
+          <span className="feature-platform">
+            <PlatformIcon id={release.platform} size={22} />
+          </span>
+          <span className="feature-version">{release.version}</span>
+        </div>
+        <div className="feature-strip">
+          <AppIcon name={client.name} size={46} />
+          <div className="feature-strip-text">
+            <strong>{client.name}</strong>
+            <span>
+              {release.version} · build {release.build}
+            </span>
+          </div>
+          <CopyButton variant="get" label="COPY" text={linkFor(platform, isMaster)} message={`${client.name} ${platformById(release.platform).label} link copied`} className="get-pill-light" />
+        </div>
+      </div>
     </motion.div>
+  );
+}
+
+function ClientRow({ client, isMaster }) {
+  const ready = available(client);
+  const primary = ready.find((p) => p.id === client.latest?.platform) || ready[0];
+  return (
+    <motion.li variants={rise} className="app-row">
+      <Link to={`/clients/${client.slug}`} className="app-row-link">
+        <motion.span whileHover={{ scale: 1.06, rotate: -2 }} transition={spring} className="app-row-icon">
+          <AppIcon name={client.name} size={62} />
+        </motion.span>
+        <span className="app-row-text">
+          <strong>{client.name}</strong>
+          {primary ? (
+            <span className="app-row-sub">
+              {primary.current.version}
+              <span className="app-row-platforms">
+                {ready.map((p) => (
+                  <span key={p.id} title={platformById(p.id).long}>
+                    <PlatformIcon id={p.id} size={13} />
+                  </span>
+                ))}
+              </span>
+            </span>
+          ) : (
+            <span className="app-row-sub muted">No builds yet</span>
+          )}
+          <span className="app-row-meta">{client.latest ? `Updated ${timeAgo(client.latest.uploadedAt)}` : client.notes || `Added ${timeAgo(client.createdAt)}`}</span>
+        </span>
+      </Link>
+      {primary && (
+        <CopyButton variant="get" label="COPY" text={linkFor(primary, isMaster)} message={`${client.name} ${platformById(primary.id).label} link copied`} />
+      )}
+    </motion.li>
   );
 }
 
@@ -66,6 +106,7 @@ function NewClientSheet({ open, onClose }) {
       setName('');
       setNotes('');
       setError('');
+      setBusy(false);
     }
   }, [open]);
 
@@ -84,9 +125,9 @@ function NewClientSheet({ open, onClose }) {
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="New client" subtitle="Each client keeps its own router versions and links.">
+    <Sheet open={open} onClose={onClose} title="New Client" subtitle="Each client keeps its own builds, per platform, and its own links.">
       <form onSubmit={onSubmit} className="sheet-body">
-        <Field label="Client name" error={error}>
+        <Field label="Name" error={error}>
           {(id) => <input id={id} className="input" placeholder="Ganesham Teleradiology" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={80} />}
         </Field>
         <Field label="Notes" hint="Optional. Site, contact, anything worth remembering.">
@@ -110,6 +151,7 @@ export default function Clients() {
   const [clients, setClients] = useState(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [platform, setPlatform] = useState('all');
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -119,25 +161,38 @@ export default function Clients() {
   }, []);
 
   const filtered = useMemo(() => {
+    if (!clients) return null;
     const q = query.trim().toLowerCase();
-    if (!clients || !q) return clients;
-    return clients.filter((c) => c.name.toLowerCase().includes(q) || c.notes.toLowerCase().includes(q));
-  }, [clients, query]);
+    return clients.filter(
+      (c) =>
+        (!q || c.name.toLowerCase().includes(q) || c.notes.toLowerCase().includes(q)) &&
+        (platform === 'all' || c.platforms.some((p) => p.id === platform && p.current)),
+    );
+  }, [clients, query, platform]);
 
-  const totalVersions = clients?.reduce((n, c) => n + c.releaseCount, 0) ?? 0;
+  const recent = useMemo(
+    () =>
+      (clients || [])
+        .filter((c) => c.latest)
+        .sort((a, b) => new Date(b.latest.uploadedAt) - new Date(a.latest.uploadedAt))
+        .slice(0, 6),
+    [clients],
+  );
+
+  const builds = clients?.reduce((n, c) => n + c.releaseCount, 0) ?? 0;
+  const counts = Object.fromEntries(PLATFORMS.map((p) => [p.id, clients?.filter((c) => c.platforms.some((x) => x.id === p.id && x.current)).length ?? 0]));
 
   return (
     <>
-      <div className="page-head">
+      <header className="large-header">
         <div>
+          <p className="eyebrow">{today}</p>
           <h1>Clients</h1>
-          <p className="page-sub">
-            {clients ? `${plural(clients.length, 'client')} · ${plural(totalVersions, 'version')} stored` : ' '}
-          </p>
+          <p className="page-sub">{clients ? `${plural(clients.length, 'client')} · ${plural(builds, 'build')} stored` : ' '}</p>
         </div>
-        <div className="page-tools">
-          <label className="search">
-            <Search size={16} />
+        <div className="header-tools">
+          <label className="search glass">
+            <Search size={16} strokeWidth={2.4} />
             <input id="client-search" type="search" placeholder="Search" aria-label="Search clients" value={query} onChange={(e) => setQuery(e.target.value)} />
           </label>
           {isMaster && (
@@ -146,30 +201,67 @@ export default function Clients() {
             </Button>
           )}
         </div>
-      </div>
+      </header>
 
       {error && <p className="load-error">{error}</p>}
 
       {!clients && !error && (
-        <div className="client-grid">
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="card client-card skeleton" />
+        <div className="shelf">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="feature-wrap">
+              <div className="feature-card skeleton" />
+            </div>
           ))}
         </div>
       )}
 
-      {filtered?.length > 0 && (
-        <motion.div className="client-grid" variants={grid} initial="hidden" animate="show" key={query ? 'search' : 'all'}>
-          {filtered.map((c) => (
-            <ClientCard key={c.id} client={c} isMaster={isMaster} />
-          ))}
-        </motion.div>
+      {recent.length > 0 && !query && platform === 'all' && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Latest Builds</h2>
+          </div>
+          <motion.div className="shelf" variants={shelf} initial="hidden" animate="show">
+            {recent.map((c) => (
+              <FeatureCard key={c.id} client={c} isMaster={isMaster} />
+            ))}
+          </motion.div>
+        </section>
+      )}
+
+      {clients?.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2>All Clients</h2>
+            <Segmented
+              label="Platform"
+              size="sm"
+              value={platform}
+              onChange={setPlatform}
+              options={[
+                { id: 'all', label: 'All' },
+                ...PLATFORMS.map((p) => ({ id: p.id, label: p.label, icon: <PlatformIcon id={p.id} size={14} />, badge: counts[p.id] })),
+              ]}
+            />
+          </div>
+          {filtered.length > 0 ? (
+            <motion.ul className="app-list" variants={shelf} initial="hidden" animate="show" key={`${query}|${platform}`}>
+              {filtered.map((c) => (
+                <ClientRow key={c.id} client={c} isMaster={isMaster} />
+              ))}
+            </motion.ul>
+          ) : (
+            <div className="empty">
+              <h2>No matches</h2>
+              <p>{query ? `Nothing matches “${query}”.` : `No client has a ${platformById(platform).long} build yet.`}</p>
+            </div>
+          )}
+        </section>
       )}
 
       {clients?.length === 0 && (
         <motion.div className="empty" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease }}>
           <span className="empty-icon">
-            <Package size={34} strokeWidth={1.6} />
+            <Package size={36} strokeWidth={1.6} />
           </span>
           <h2>No clients yet</h2>
           <p>
@@ -183,13 +275,6 @@ export default function Clients() {
             </Button>
           )}
         </motion.div>
-      )}
-
-      {clients?.length > 0 && filtered?.length === 0 && (
-        <div className="empty">
-          <h2>No results for “{query}”</h2>
-          <p>Check the spelling or try another name.</p>
-        </div>
       )}
 
       <NewClientSheet open={adding} onClose={() => setAdding(false)} />

@@ -10,6 +10,7 @@ import clientRoutes from './routes/clients.js';
 import { downloads, publicApi } from './routes/public.js';
 import releaseRoutes from './routes/releases.js';
 import settingsRoutes from './routes/settings.js';
+import taskRoutes from './routes/tasks.js';
 
 // Sessions ride on a cookie, so refuse state-changing calls that a page on another origin started.
 function sameOrigin(req, _res, next) {
@@ -52,7 +53,7 @@ export function createApp() {
     res.json({ ok: true });
   });
   api.use(sameOrigin, express.json({ limit: '100kb' }), loadAuth);
-  api.use(authRoutes, publicApi, clientRoutes, releaseRoutes, settingsRoutes);
+  api.use(authRoutes, publicApi, clientRoutes, releaseRoutes, settingsRoutes, taskRoutes);
   api.use((_req, _res, next) => next(new HttpError(404, 'Not found.')));
   api.use((err, _req, res, _next) => {
     if (res.headersSent) return res.destroy();

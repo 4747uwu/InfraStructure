@@ -9,6 +9,7 @@ import { requireMaster, requireUploader } from '../auth.js';
 import { ALLOWED_EXTENSIONS, config } from '../config.js';
 import { clients, ObjectId, releases, toObjectId } from '../db.js';
 import { cleanText, HttpError, safeFileName } from '../http.js';
+import { field, guessPlatform, normalizePlatform, platformOf, read } from '../platforms.js';
 import { newToken } from '../security.js';
 import { releaseView } from '../serialize.js';
 import { createClient, findClient, parseClientName } from './clients.js';
@@ -46,10 +47,13 @@ router.put('/upload', requireUploader, async (req, res) => {
   const clientRef = cleanText(req.query.client, 80);
   const expectedSha = cleanText(req.query.sha256, 64).toLowerCase();
   const force = req.query.force === '1';
+  const platformParam = cleanText(req.query.platform, 20);
+  const platform = platformParam ? normalizePlatform(platformParam) : guessPlatform(fileName);
 
   if (!clientRef) fail(400, 'Choose which client this router belongs to.');
   if (!version) fail(400, 'Enter a version, for example 0.1.2.');
   if (!fileName) fail(400, 'The file needs a name.');
+  if (!platform) fail(400, 'Platform must be windows, mac-arm or mac-intel.');
   if (!ALLOWED_EXTENSIONS.includes(extname(fileName).toLowerCase())) {
     fail(415, `Only installer files can be stored (${ALLOWED_EXTENSIONS.join(', ')}).`);
   }
@@ -120,6 +124,7 @@ router.put('/upload', requireUploader, async (req, res) => {
   const release = {
     _id: id,
     clientId: client._id,
+    platform,
     version,
     build,
     fileName,
@@ -138,10 +143,10 @@ router.put('/upload', requireUploader, async (req, res) => {
   };
   await releases().insertOne(release);
 
-  // A new upload becomes the version the client's "latest" links serve.
+  // A new upload becomes the version that platform's "latest" links serve.
   client = await clients().findOneAndUpdate(
     { _id: client._id },
-    { $set: { currentReleaseId: id, updatedAt: release.uploadedAt } },
+    { $set: { [field(platform, 'current')]: id, updatedAt: release.uploadedAt } },
     { returnDocument: 'after' },
   );
 
@@ -164,27 +169,29 @@ router.patch('/releases/:id', requireMaster, async (req, res) => {
   if (req.body?.archived !== undefined) set.archived = Boolean(req.body.archived);
   if (Object.keys(set).length) await releases().updateOne({ _id: release._id }, { $set: set });
 
-  // Archiving withdraws the links but keeps the file. If it was the current
-  // version, fall back to the newest one still available.
+  // Archiving withdraws the links but keeps the file. If it was the current version for its
+  // platform, fall back to the newest one still available on that platform.
+  const platform = platformOf(release);
+  const platformFilter = platform === 'windows' ? { platform: { $in: ['windows', null] } } : { platform };
   if (set.archived === true) {
     const client = await clients().findOne({ _id: release.clientId });
-    if (String(client?.currentReleaseId) === String(release._id)) {
+    if (String(read(client, platform, 'current')) === String(release._id)) {
       const next = await releases()
-        .find({ clientId: release.clientId, archived: { $ne: true } })
+        .find({ clientId: release.clientId, archived: { $ne: true }, ...platformFilter })
         .sort({ uploadedAt: -1 })
         .limit(1)
         .next();
       await clients().updateOne(
         { _id: release.clientId },
-        { $set: { currentReleaseId: next?._id || null, updatedAt: new Date() } },
+        { $set: { [field(platform, 'current')]: next?._id || null, updatedAt: new Date() } },
       );
     }
   }
-  // Restoring into a client left with no current version makes this one current again.
+  // Restoring into a platform left with no current version makes this one current again.
   if (set.archived === false) {
     await clients().updateOne(
-      { _id: release.clientId, currentReleaseId: null },
-      { $set: { currentReleaseId: release._id, updatedAt: new Date() } },
+      { _id: release.clientId, [field(platform, 'current')]: null },
+      { $set: { [field(platform, 'current')]: release._id, updatedAt: new Date() } },
     );
   }
   res.json({ ok: true });

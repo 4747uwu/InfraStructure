@@ -57,15 +57,18 @@ export function initials(name) {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
+// Ten clearly different hues, so neighbouring clients rarely look alike.
 const GRADIENTS = [
-  ['#5ac8fa', '#007aff'],
-  ['#34c759', '#00a3a3'],
-  ['#ff9f0a', '#ff375f'],
-  ['#bf5af2', '#5e5ce6'],
-  ['#ff6482', '#d6249f'],
-  ['#64d2ff', '#5e5ce6'],
-  ['#ffcc00', '#ff8a00'],
-  ['#30d158', '#0a9f6b'],
+  ['#5ac8fa', '#0a6cff'], // blue
+  ['#8e8bff', '#4b3fd8'], // indigo
+  ['#d98cff', '#9b40d8'], // purple
+  ['#ff7eb6', '#e0337a'], // pink
+  ['#ff8a7a', '#e5322d'], // red
+  ['#ffb340', '#ff6a00'], // orange
+  ['#ffe066', '#f0a800'], // yellow
+  ['#5be27a', '#1f9e45'], // green
+  ['#5ce0d6', '#0a96a6'], // teal
+  ['#a7b0c0', '#4b5563'], // graphite
 ];
 
 // Same client, same colour, every time - without storing anything.

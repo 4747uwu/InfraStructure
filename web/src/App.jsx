@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './auth.jsx';
 import Shell from './components/Shell.jsx';
 import { ToastProvider } from './components/toast.jsx';
 import { Logo } from './components/ui.jsx';
+import Board from './pages/Board.jsx';
 import ClientDetail from './pages/ClientDetail.jsx';
 import Clients from './pages/Clients.jsx';
 import Login from './pages/Login.jsx';
@@ -27,6 +28,7 @@ function Workspace() {
       <Route element={user ? <Shell /> : <Navigate to="/login" replace />}>
         <Route index element={<Clients />} />
         <Route path="clients/:slug" element={<ClientDetail />} />
+        <Route path="board" element={<Board />} />
         <Route path="settings" element={isMaster ? <Settings /> : <Navigate to="/" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

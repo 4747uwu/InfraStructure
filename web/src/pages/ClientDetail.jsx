@@ -2,28 +2,26 @@ import {
   Archive,
   ArchiveRestore,
   ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Download,
   ExternalLink,
-  FileDown,
-  Link as LinkIcon,
   Lock,
   Pencil,
   RefreshCw,
+  SquareKanban,
   Star,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, copyText } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { useToast } from '../components/toast.jsx';
-import { Avatar, Banner, Button, CopyButton, ease, Field, Menu, Sheet } from '../components/ui.jsx';
+import { AppIcon, Banner, Button, CopyButton, ease, Field, Menu, Segmented, Sheet } from '../components/ui.jsx';
 import UploadPanel from '../components/UploadPanel.jsx';
-import { fileKind, formatBytes, formatDate, plural, timeAgo } from '../format.js';
-
-const DIRECT_HINT = 'Downloads immediately. No password.';
-const PROTECTED_HINT = 'Asks for the download password first.';
+import { fileKind, formatBytes, formatDate, gradientFor, plural, timeAgo } from '../format.js';
+import { PlatformIcon, PLATFORMS, platformById } from '../platforms.jsx';
 
 function EditClientSheet({ client, open, onClose, onSaved }) {
   const [name, setName] = useState(client.name);
@@ -54,9 +52,9 @@ function EditClientSheet({ client, open, onClose, onSaved }) {
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="Edit client">
+    <Sheet open={open} onClose={onClose} title="Edit Client">
       <form onSubmit={onSubmit} className="sheet-body">
-        <Field label="Client name" error={error}>
+        <Field label="Name" error={error}>
           {(id) => <input id={id} className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoFocus />}
         </Field>
         <Field label="Notes">{(id) => <input id={id} className="input" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} />}</Field>
@@ -102,7 +100,7 @@ function EditReleaseSheet({ release, onClose, onSaved }) {
   }
 
   return (
-    <Sheet open={Boolean(release)} onClose={onClose} title="Edit version" subtitle={release?.fileName}>
+    <Sheet open={Boolean(release)} onClose={onClose} title="Edit Build" subtitle={release?.fileName}>
       <form onSubmit={onSubmit} className="sheet-body">
         <Field label="Version" error={error}>
           {(id) => <input id={id} className="input" value={version} onChange={(e) => setVersion(e.target.value)} maxLength={40} autoFocus />}
@@ -132,7 +130,7 @@ function ConfirmSheet({ confirm, onClose }) {
     }
   }, [confirm]);
   return (
-    <Sheet open={Boolean(confirm)} onClose={onClose} title={shown?.title || ''} width={400}>
+    <Sheet open={Boolean(confirm)} onClose={onClose} title={shown?.title || ''} width={420}>
       <div className="sheet-body">
         <p className="sheet-text">{shown?.body}</p>
         <div className="sheet-actions">
@@ -156,6 +154,28 @@ function ConfirmSheet({ confirm, onClose }) {
   );
 }
 
+// App Store style metadata strip for the selected platform's current build.
+function InfoStrip({ release }) {
+  const cells = [
+    ['Version', release.version, `Build ${release.build}`],
+    ['Size', formatBytes(release.size), fileKind(release.fileName)],
+    ['Downloads', String(release.downloads), release.lastDownloadAt ? `Last ${timeAgo(release.lastDownloadAt)}` : 'None yet'],
+    ['Updated', timeAgo(release.uploadedAt).replace(/^in /, ''), new Date(release.uploadedAt).toLocaleDateString('en', { day: 'numeric', month: 'short' })],
+    ['Platform', platformById(release.platform).label, release.platform === 'windows' ? 'Installer' : 'Mac'],
+  ];
+  return (
+    <div className="info-strip">
+      {cells.map(([caption, value, sub]) => (
+        <div className="info-cell" key={caption}>
+          <span className="info-caption">{caption}</span>
+          <span className="info-value">{value}</span>
+          <span className="info-sub">{sub}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function VersionRow({ release, isMaster, actions }) {
   const primary = isMaster ? release.links.direct : release.links.protected;
   return (
@@ -169,26 +189,25 @@ function VersionRow({ release, isMaster, actions }) {
     >
       <div className="version-main">
         <div className="version-title">
-          <span className="version-number">{release.version}</span>
-          <span className="version-build">build {release.build}</span>
+          <span className="version-number">Version {release.version}</span>
           {release.isCurrent && <span className="badge badge-current">Current</span>}
           {release.archived && <span className="badge badge-archived">Archived</span>}
+          <span className="version-date" title={formatDate(release.uploadedAt)}>
+            {timeAgo(release.uploadedAt)}
+          </span>
         </div>
-        <p className="version-file">
-          {release.fileName} · {formatBytes(release.size)}
-        </p>
         {release.notes && <p className="version-notes">{release.notes}</p>}
         <p className="version-meta" title={`SHA-256 ${release.sha256}`}>
-          {formatDate(release.uploadedAt)} · {release.source === 'script' ? 'publish script' : release.uploadedBy} ·{' '}
-          {plural(release.downloads, 'download')}
+          Build {release.build} · {release.fileName} · {formatBytes(release.size)} · {plural(release.downloads, 'download')} ·{' '}
+          {release.source === 'script' ? 'publish script' : release.uploadedBy}
         </p>
       </div>
 
       <div className="version-actions">
         {!release.archived && (
           <CopyButton
-            variant="tinted"
-            size="sm"
+            variant="get"
+            label="COPY"
             text={primary}
             message={isMaster ? `Direct link to ${release.version} copied` : `Protected link to ${release.version} copied`}
           />
@@ -200,12 +219,12 @@ function VersionRow({ release, isMaster, actions }) {
               release.archived
                 ? [{ label: 'Restore', icon: ArchiveRestore, onSelect: () => actions.setArchived(release, false) }]
                 : [
-                    { label: 'Copy protected link', icon: Lock, onSelect: () => actions.copyProtected(release) },
+                    { label: 'Copy Protected Link', icon: Lock, onSelect: () => actions.copyProtected(release) },
                     { label: 'Download', icon: Download, onSelect: () => (window.location.href = release.links.direct) },
                     'separator',
-                    !release.isCurrent && { label: 'Make current', icon: Star, onSelect: () => actions.makeCurrent(release) },
-                    { label: 'Edit details', icon: Pencil, onSelect: () => actions.edit(release) },
-                    { label: 'Reset links', icon: RefreshCw, onSelect: () => actions.resetLinks(release) },
+                    !release.isCurrent && { label: 'Make Current', icon: Star, onSelect: () => actions.makeCurrent(release) },
+                    { label: 'Edit Details', icon: Pencil, onSelect: () => actions.edit(release) },
+                    { label: 'Reset Links', icon: RefreshCw, onSelect: () => actions.resetLinks(release) },
                     'separator',
                     { label: 'Archive', icon: Archive, danger: true, onSelect: () => actions.archive(release) },
                   ]
@@ -213,7 +232,7 @@ function VersionRow({ release, isMaster, actions }) {
           />
         ) : (
           <a className="icon-btn" href={release.links.protected} target="_blank" rel="noreferrer" aria-label={`Open download page for ${release.version}`} title="Open download page">
-            <ExternalLink size={17} />
+            <ExternalLink size={18} />
           </a>
         )}
       </div>
@@ -227,7 +246,9 @@ export default function ClientDetail() {
   const navigate = useNavigate();
   const toast = useToast();
   const [data, setData] = useState(null);
+  const [openCards, setOpenCards] = useState(0);
   const [error, setError] = useState('');
+  const [platformId, setPlatformId] = useState(null);
   const [editing, setEditing] = useState(false);
   const [editingRelease, setEditingRelease] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -235,13 +256,26 @@ export default function ClientDetail() {
   const load = useCallback(
     () =>
       api(`/clients/${slug}`)
-        .then(setData)
+        .then((d) => {
+          setData(d);
+          // Open on the platform of the newest build, then stay where the user puts it.
+          setPlatformId((current) => current || d.client.latest?.platform || 'windows');
+        })
         .catch((err) => setError(err.message)),
     [slug],
   );
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!data) return;
+    api('/tasks')
+      .then((d) => setOpenCards(d.tasks.filter((t) => t.clientId === data.client.id && t.status !== 'completed').length))
+      .catch(() => {});
+  }, [data]);
+
+  const releases = useMemo(() => data?.releases.filter((r) => r.platform === platformId) || [], [data, platformId]);
 
   if (error) {
     return (
@@ -254,10 +288,13 @@ export default function ClientDetail() {
       </div>
     );
   }
-  if (!data) return <div className="detail-skeleton skeleton" />;
+  if (!data || !platformId) return <div className="detail-skeleton skeleton" />;
 
-  const { client, releases } = data;
-  const current = client.current;
+  const { client } = data;
+  const platform = client.platforms.find((p) => p.id === platformId);
+  const current = platform.current;
+  const meta = platformById(platformId);
+  const [ca, cb] = gradientFor(client.name);
 
   // Each action reports failures as a toast and reloads on success, so rows never show stale state.
   const run = async (work, done) => {
@@ -275,7 +312,7 @@ export default function ClientDetail() {
     copyProtected: async (r) =>
       (await copyText(r.links.protected)) ? toast(`Protected link to ${r.version} copied`) : toast('Could not copy the link.', 'error'),
     makeCurrent: (r) =>
-      run(() => api(`/clients/${client.id}`, { method: 'PATCH', body: { currentReleaseId: r.id } }), `Version ${r.version} is now current`),
+      run(() => api(`/clients/${client.id}`, { method: 'PATCH', body: { currentReleaseId: r.id } }), `${r.version} is now current for ${platformById(r.platform).label}`),
     setArchived: (r, archived) =>
       run(() => api(`/releases/${r.id}`, { method: 'PATCH', body: { archived } }), archived ? `Version ${r.version} archived` : `Version ${r.version} restored`),
     archive: (r) =>
@@ -289,45 +326,78 @@ export default function ClientDetail() {
     resetLinks: (r) =>
       setConfirm({
         title: `Reset links for ${r.version}?`,
-        body: 'Every link already shared for this version stops working. New links are created in their place.',
+        body: 'Every link already shared for this build stops working. New links are created in their place.',
         action: 'Reset Links',
         danger: true,
         run: () => run(() => api(`/releases/${r.id}/rotate-links`, { method: 'POST' }), 'New links created'),
       }),
   };
 
-  const resetClientLinks = () =>
+  const resetLatestLinks = () =>
     setConfirm({
-      title: 'Reset the always-latest links?',
-      body: `Every always-latest link already shared for ${client.name} stops working. Links to individual versions are not affected.`,
+      title: `Reset the ${meta.label} latest links?`,
+      body: `Every always-latest ${meta.long} link already shared for ${client.name} stops working. Other platforms and links to individual builds are not affected.`,
       action: 'Reset Links',
       danger: true,
-      run: () => run(() => api(`/clients/${client.id}/rotate-links`, { method: 'POST' }), 'New links created'),
+      run: () => run(() => api(`/clients/${client.id}/rotate-links`, { method: 'POST', body: { platform: platformId } }), 'New links created'),
     });
 
   return (
-    <>
-      <Link to="/" className="back">
-        <ChevronLeft size={18} />
+    <div className="product" style={{ '--ca': ca, '--cb': cb }}>
+      <div className="product-glow" aria-hidden="true" />
+
+      <Link to="/" className="back glass">
+        <ChevronLeft size={18} strokeWidth={2.6} />
         Clients
       </Link>
 
-      <div className="detail-head">
-        <Avatar name={client.name} size={76} />
-        <div className="detail-title">
+      <header className="product-head">
+        <motion.div initial={{ scale: 0.7, opacity: 0, rotate: -6 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 18 }}>
+          <AppIcon name={client.name} size={128} />
+        </motion.div>
+        <div className="product-title">
           <h1>{client.name}</h1>
-          <p className="page-sub">{client.notes || plural(client.releaseCount, 'version')}</p>
+          <p className="page-sub">{client.notes || `${plural(client.releaseCount, 'build')} across ${client.platforms.filter((p) => p.count).length || 0} platforms`}</p>
+          <div className="product-actions">
+            {current ? (
+              <>
+                <CopyButton
+                  size="lg"
+                  text={isMaster ? platform.links.direct : platform.links.protected}
+                  label="Copy Link"
+                  message={isMaster ? `${meta.label} direct link copied` : `${meta.label} protected link copied`}
+                />
+                {isMaster ? (
+                  <CopyButton size="lg" variant="glass" icon={Lock} text={platform.links.protected} label="Protected Link" message={`${meta.label} protected link copied`} />
+                ) : (
+                  <a className="btn btn-glass btn-lg glass" href={platform.links.protected} target="_blank" rel="noreferrer">
+                    <ExternalLink size={17} strokeWidth={2.2} />
+                    <span>Download Page</span>
+                  </a>
+                )}
+              </>
+            ) : (
+              <span className="product-none">No {meta.long} build yet</span>
+            )}
+            {isMaster && (
+              <Menu
+                trigger="glass"
+                label="Client actions"
+                items={[
+                  current && { label: 'Download', icon: Download, onSelect: () => (window.location.href = platform.links.direct) },
+                  { label: 'Edit Client', icon: Pencil, onSelect: () => setEditing(true) },
+                  { label: `Reset ${meta.label} Links`, icon: RefreshCw, onSelect: resetLatestLinks },
+                ]}
+              />
+            )}
+          </div>
+          {current && (
+            <p className="product-hint">
+              Always serves the current {meta.long} build. {isMaster ? 'Downloads at once, no password.' : 'Asks for the download password.'}
+            </p>
+          )}
         </div>
-        {isMaster && (
-          <Menu
-            label="Client actions"
-            items={[
-              { label: 'Edit client', icon: Pencil, onSelect: () => setEditing(true) },
-              { label: 'Reset latest links', icon: RefreshCw, onSelect: resetClientLinks },
-            ]}
-          />
-        )}
-      </div>
+      </header>
 
       {app && !app.downloadPasswordSet && (
         <Banner icon={CircleAlert} tone="warn">
@@ -336,82 +406,60 @@ export default function ClientDetail() {
               Protected links cannot be opened until you set a download password. <Link to="/settings">Set it in Settings</Link>
             </>
           ) : (
-            'The download password has not been set yet. Links will not open until the master account sets one.'
+            'The download password has not been set yet. Protected links will not open until the master account sets one.'
           )}
         </Banner>
       )}
 
-      <motion.section className="card hero" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease, delay: 0.05 }}>
-        {current ? (
-          <>
-            <div className="hero-main">
-              <span className="eyebrow">Current version</span>
-              <div className="hero-version">
-                <AnimatePresence mode="popLayout" initial={false}>
-                  <motion.span
-                    key={current.id}
-                    initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
-                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                    exit={{ opacity: 0, y: -18, filter: 'blur(8px)' }}
-                    transition={{ duration: 0.45, ease }}
-                  >
-                    {current.version}
-                  </motion.span>
-                </AnimatePresence>
+      <div className="platform-bar">
+        <Segmented
+          label="Platform"
+          value={platformId}
+          onChange={setPlatformId}
+          options={client.platforms.map((p) => ({ id: p.id, label: platformById(p.id).label, icon: <PlatformIcon id={p.id} size={15} />, badge: p.count }))}
+        />
+        <Link to={`/board?client=${client.id}`} className="board-link">
+          <SquareKanban size={16} strokeWidth={2.2} />
+          {openCards ? `${plural(openCards, 'open change')}` : 'No open changes'}
+          <ChevronRight size={15} strokeWidth={2.4} />
+        </Link>
+      </div>
+
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={platformId + (current?.id || 'none')}
+          initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, y: -6, filter: 'blur(4px)', transition: { duration: 0.12 } }}
+          transition={{ duration: 0.4, ease }}
+        >
+          {current ? (
+            <InfoStrip release={current} />
+          ) : (
+            <div className="platform-empty">
+              <span className="platform-empty-icon">
+                <PlatformIcon id={platformId} size={26} />
+              </span>
+              <div>
+                <h3>No {meta.long} build</h3>
+                <p>{isMaster ? `Add one below. Its always-latest link works the moment the upload finishes.` : `Nothing has been uploaded for ${meta.long} yet.`}</p>
               </div>
-              <p className="hero-file">
-                <FileDown size={16} strokeWidth={2} />
-                <span>{current.fileName}</span>
-              </p>
-              <p className="hero-meta">
-                {fileKind(current.fileName)} · {formatBytes(current.size)} · build {current.build} · uploaded {timeAgo(current.uploadedAt)}
-              </p>
             </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
 
-            <div className="hero-actions">
-              <CopyButton
-                size="lg"
-                text={isMaster ? client.links.direct : client.links.protected}
-                label="Copy Link"
-                message={isMaster ? 'Direct link copied' : 'Protected link copied'}
-              />
-              {isMaster ? (
-                <>
-                  <CopyButton size="lg" variant="tinted" icon={Lock} text={client.links.protected} label="Copy Protected Link" message="Protected link copied" />
-                  <a className="btn btn-plain btn-lg" href={client.links.direct}>
-                    <Download size={16} strokeWidth={2.2} />
-                    <span>Download</span>
-                  </a>
-                </>
-              ) : (
-                <a className="btn btn-tinted btn-lg" href={client.links.protected} target="_blank" rel="noreferrer">
-                  <ExternalLink size={16} strokeWidth={2.2} />
-                  <span>Open Download Page</span>
-                </a>
-              )}
-              <p className="hero-hint">
-                <LinkIcon size={13} strokeWidth={2.4} />
-                Always serves the current version. {isMaster ? DIRECT_HINT : PROTECTED_HINT}
-              </p>
-            </div>
-          </>
-        ) : (
-          <div className="hero-empty">
-            <span className="eyebrow">No versions yet</span>
-            <p>{isMaster ? 'Add the first installer below. Its link is ready the moment the upload finishes.' : 'Nothing has been uploaded for this client yet.'}</p>
-          </div>
-        )}
-      </motion.section>
-
-      {isMaster && <UploadPanel client={client} onUploaded={load} />}
+      {isMaster && <UploadPanel client={client} platform={platformId} onUploaded={load} />}
 
       {releases.length > 0 && (
-        <section className="versions">
+        <section className="section">
           <div className="section-head">
-            <h2>Versions</h2>
-            <span>{releases.length}</span>
+            <h2>Version History</h2>
+            <span className="section-count">
+              {meta.label} · {releases.length}
+            </span>
           </div>
-          <ul className="card version-list">
+          <ul className="inset-list version-list">
             <AnimatePresence initial={false}>
               {releases.map((r) => (
                 <VersionRow key={r.id} release={r} isMaster={isMaster} actions={actions} />
@@ -439,13 +487,13 @@ export default function ClientDetail() {
             onClose={() => setEditingRelease(null)}
             onSaved={() => {
               setEditingRelease(null);
-              toast('Version updated');
+              toast('Build updated');
               load();
             }}
           />
           <ConfirmSheet confirm={confirm} onClose={() => setConfirm(null)} />
         </>
       )}
-    </>
+    </div>
   );
 }

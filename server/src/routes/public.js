@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { config, DOWNLOAD_TICKET_TTL_S } from '../config.js';
 import { clients, getSettings, releases, toObjectId } from '../db.js';
 import { HttpError, messagePage } from '../http.js';
+import { field, PLATFORMS, platformOf, read } from '../platforms.js';
 import { failureLimiter, safeEqual, sign, verifyPassword } from '../security.js';
 
 // Everything here is reachable without signing in: the link token is the credential.
@@ -12,23 +13,25 @@ export const downloads = Router();
 const unlockFailures = failureLimiter({ windowMs: 10 * 60 * 1000, max: 10 });
 const TOKEN = /^[\w-]{16,64}$/;
 
-// A token belongs either to one version, or to a client (meaning "whatever is current").
+// A token belongs either to one version, or to one platform of a client
+// (meaning "whatever is current for that platform").
 async function resolveLink(kind, token) {
   if (!TOKEN.test(token)) return null;
-  const field = `${kind}Token`;
 
-  const release = await releases().findOne({ [field]: token });
+  const release = await releases().findOne({ [`${kind}Token`]: token });
   if (release) {
     const client = await clients().findOne({ _id: release.clientId });
-    return client ? { scope: 'version', client, release: release.archived ? null : release } : null;
+    return client ? { scope: 'version', client, platform: platformOf(release), release: release.archived ? null : release } : null;
   }
 
-  const client = await clients().findOne({ [field]: token });
-  if (!client) return null;
-  const current = client.currentReleaseId
-    ? await releases().findOne({ _id: client.currentReleaseId, archived: { $ne: true } })
-    : null;
-  return { scope: 'latest', client, release: current };
+  for (const platform of PLATFORMS) {
+    const client = await clients().findOne({ [field(platform, kind)]: token });
+    if (!client) continue;
+    const currentId = read(client, platform, 'current');
+    const current = currentId ? await releases().findOne({ _id: currentId, archived: { $ne: true } }) : null;
+    return { scope: 'latest', client, platform, release: current };
+  }
+  return null;
 }
 
 function sendRelease(req, res, release) {
@@ -81,6 +84,7 @@ publicApi.get('/public/link/:token', async (req, res) => {
   res.json({
     clientName: link.client.name,
     scope: link.scope,
+    platform: link.platform,
     passwordSet: Boolean(s?.downloadPassword),
     release: link.release && {
       version: link.release.version,

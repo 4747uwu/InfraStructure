@@ -24,6 +24,10 @@
 .PARAMETER Version
     Version label on the hub. Defaults to the version in package.json.
 
+.PARAMETER Platform
+    windows, mac-arm (Apple silicon) or mac-intel. Defaults to a guess from the
+    installer's file name, which is windows for the .exe that build.bat produces.
+
 .PARAMETER Notes
     What changed in this build.
 
@@ -53,6 +57,7 @@ param(
     [string]$Client = "",
     [string]$Version = "",
     [string]$Notes = "",
+    [ValidateSet('', 'windows', 'mac-arm', 'mac-intel')][string]$Platform = "",
     [switch]$SkipBuild,
     [string]$File = "",
     [switch]$Force,
@@ -243,6 +248,7 @@ if (-not $Force) {
 }
 
 $query = "client=$(& $enc $Client)&version=$(& $enc $Version)&filename=$(& $enc $installer.Name)&sha256=$sha&notes=$(& $enc $Notes)"
+if ($Platform) { $query += "&platform=$Platform" }
 if ($Force) { $query += "&force=1" }
 # The progress bar goes to the console (stderr); the response is captured from stdout.
 $upload = Read-HubResponse (& curl.exe --globoff --progress-bar -H $auth -H "Content-Type: application/octet-stream" -T $installer.FullName -w "`n%{http_code}" "$Server/api/upload?$query")
@@ -250,7 +256,7 @@ if ($upload.Status -ne 201) { Write-Fail (Get-HubError $upload) }
 
 $release = $upload.Json.release
 Write-Host ""
-Write-Host "  Published $($upload.Json.client.name) $($release.version)  (build $($release.build))" -ForegroundColor Green
+Write-Host "  Published $($upload.Json.client.name) $($release.version) for $($release.platform)  (build $($release.build))" -ForegroundColor Green
 Write-Host "  Manage         : $Server/clients/$($upload.Json.client.slug)"
 Write-Host "  Protected link : $($release.links.protected)"
 Write-Host "  The passwordless link is available to the master account in the hub."

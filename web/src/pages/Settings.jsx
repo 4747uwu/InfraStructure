@@ -197,12 +197,12 @@ function DeployToken({ status, baseUrl, onChanged }) {
       </AnimatePresence>
 
       <div className="row row-stack">
-        <p className="row-label">Build a router and upload it in one step</p>
+        <p className="row-label">Build a router and upload it in one step, from its folder</p>
         <div className="code-box">
-          <pre>{'tools\\publish-router.bat "D:\\work\\Go exe\\KENYA" -Client "Kenya"'}</pre>
+          <pre>{'publish-to-hub.bat -Notes "what changed"'}</pre>
         </div>
         <p className="field-hint">
-          Add <code>-SkipBuild</code> to upload the installer already in <code>dist</code> without rebuilding.
+          Every router folder has its own <code>publish-to-hub.bat</code>, already tied to its client. Add <code>-SkipBuild</code> to upload the installer already in <code>dist</code>, or <code>-Platform mac-arm</code> / <code>mac-intel</code> for a Mac build.
         </p>
       </div>
     </>

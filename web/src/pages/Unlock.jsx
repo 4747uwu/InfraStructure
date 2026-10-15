@@ -3,8 +3,9 @@ import { AnimatePresence, motion, useAnimationControls } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../api.js';
-import { Aurora, Avatar, Button, ease, softSpring, Spinner, SuccessMark } from '../components/ui.jsx';
+import { AppIcon, Aurora, Button, ease, softSpring, Spinner, SuccessMark } from '../components/ui.jsx';
 import { fileKind, formatBytes } from '../format.js';
+import { PlatformIcon, platformById } from '../platforms.jsx';
 
 const swap = {
   initial: { opacity: 0, y: 12, filter: 'blur(6px)' },
@@ -96,9 +97,13 @@ export default function Unlock() {
 
             {info && release && info.passwordSet && !downloadUrl && (
               <motion.form key="form" onSubmit={onSubmit} {...swap}>
-                <Avatar name={info.clientName} size={76} />
+                <AppIcon name={info.clientName} size={84} />
                 <h1>{info.clientName}</h1>
                 <p className="unlock-version">Version {release.version}</p>
+                <p className="unlock-platform">
+                  <PlatformIcon id={info.platform} size={14} />
+                  {platformById(info.platform).long}
+                </p>
                 <p className="unlock-file">
                   {fileKind(release.fileName)} · {formatBytes(release.size)}
                 </p>

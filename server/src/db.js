@@ -20,6 +20,12 @@ export async function connect() {
     releases().createIndex({ clientId: 1, sha256: 1 }),
     releases().createIndex({ directToken: 1 }, { unique: true }),
     releases().createIndex({ protectedToken: 1 }, { unique: true }),
+    // Mac "latest" link tokens (Windows ones are the top-level tokens above).
+    clients().createIndex({ 'macArm.directToken': 1 }, { unique: true, sparse: true }),
+    clients().createIndex({ 'macArm.protectedToken': 1 }, { unique: true, sparse: true }),
+    clients().createIndex({ 'macIntel.directToken': 1 }, { unique: true, sparse: true }),
+    clients().createIndex({ 'macIntel.protectedToken': 1 }, { unique: true, sparse: true }),
+    tasks().createIndex({ status: 1, order: 1 }),
   ]);
   return db;
 }
@@ -32,6 +38,7 @@ export const sessions = () => db.collection('sessions');
 export const clients = () => db.collection('clients');
 export const releases = () => db.collection('releases');
 export const settings = () => db.collection('settings');
+export const tasks = () => db.collection('tasks');
 
 export const SETTINGS_ID = 'main';
 export const getSettings = () => settings().findOne({ _id: SETTINGS_ID });

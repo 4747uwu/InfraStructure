@@ -1,7 +1,8 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
-import { settings, SETTINGS_ID, users } from './db.js';
+import { clients, settings, SETTINGS_ID, users } from './db.js';
+import { macLinkFields } from './platforms.js';
 import { hashPassword, newToken } from './security.js';
 
 // First-boot setup: storage folders, the link-signing secret, and the two accounts.
@@ -14,6 +15,12 @@ export async function bootstrap() {
     { $setOnInsert: { linkSecret: newToken(32), downloadPassword: null, deployToken: null, createdAt: new Date() } },
     { upsert: true },
   );
+
+  // Clients created before Mac platforms existed get their Mac link tokens. Their existing
+  // links, current version and files are untouched: those are now the Windows ones.
+  for await (const client of clients().find({ macArm: { $exists: false } }, { projection: { _id: 1 } })) {
+    await clients().updateOne({ _id: client._id, macArm: { $exists: false } }, { $set: macLinkFields() });
+  }
 
   for (const role of ['master', 'helper']) {
     if (await users().findOne({ role })) continue;

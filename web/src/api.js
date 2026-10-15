@@ -29,10 +29,10 @@ export async function api(path, { method = 'GET', body } = {}) {
 }
 
 // The file goes up as the raw request body so the browser can report real progress.
-export function uploadRelease({ client, version, notes, file, onProgress }) {
+export function uploadRelease({ client, version, notes, platform, file, onProgress }) {
   const xhr = new XMLHttpRequest();
   const promise = new Promise((resolve, reject) => {
-    const query = new URLSearchParams({ client, version, notes: notes || '', filename: file.name });
+    const query = new URLSearchParams({ client, version, notes: notes || '', platform, filename: file.name });
     xhr.open('PUT', `/api/upload?${query}`);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded, e.total);

@@ -6,33 +6,35 @@ import { copyText } from '../api.js';
 import { gradientFor, initials } from '../format.js';
 import { useToast } from './toast.jsx';
 
-export const spring = { type: 'spring', stiffness: 380, damping: 32 };
-export const softSpring = { type: 'spring', stiffness: 220, damping: 28 };
+export const spring = { type: 'spring', stiffness: 420, damping: 34 };
+export const softSpring = { type: 'spring', stiffness: 240, damping: 28 };
 export const ease = [0.22, 1, 0.36, 1];
 
 export function Logo({ size = 32 }) {
   return (
-    <span className="logo" style={{ width: size, height: size, borderRadius: size * 0.235 }} aria-hidden="true">
-      <ArrowDownToLine size={size * 0.56} strokeWidth={2.4} />
+    <span className="logo" style={{ width: size, height: size, borderRadius: size * 0.2237 }} aria-hidden="true">
+      <ArrowDownToLine size={size * 0.54} strokeWidth={2.5} />
     </span>
   );
 }
 
-export function Avatar({ name, size = 48 }) {
+// An app icon: superellipse-ish corner, gradient body, glass highlight. Same client, same colours.
+export function AppIcon({ name, size = 56, className = '' }) {
   const [from, to] = gradientFor(name);
   return (
     <span
-      className="avatar"
+      className={`app-icon ${className}`}
       aria-hidden="true"
       style={{
         width: size,
         height: size,
-        fontSize: size * 0.38,
-        borderRadius: size * 0.27,
-        background: `linear-gradient(140deg, ${from}, ${to})`,
+        fontSize: size * 0.36,
+        borderRadius: size * 0.2237,
+        '--icon-a': from,
+        '--icon-b': to,
       }}
     >
-      {initials(name)}
+      <span className="app-icon-glyph">{initials(name)}</span>
     </span>
   );
 }
@@ -45,19 +47,20 @@ export function Button({ variant = 'primary', size, busy = false, icon: Icon, ch
   return (
     <motion.button
       type="button"
-      whileTap={{ scale: 0.96 }}
+      whileTap={{ scale: 0.95 }}
       transition={spring}
       {...props}
       className={`btn btn-${variant} ${size ? `btn-${size}` : ''} ${className}`}
       disabled={busy || props.disabled}
     >
-      {busy ? <Spinner /> : Icon && <Icon size={size === 'sm' ? 14 : 16} strokeWidth={2.2} />}
+      {busy ? <Spinner /> : Icon && <Icon size={size === 'sm' ? 14 : 17} strokeWidth={2.2} />}
       {children && <span>{children}</span>}
     </motion.button>
   );
 }
 
-export function CopyButton({ text, label = 'Copy link', message = 'Link copied', variant = 'primary', size, icon: Icon = LinkIcon }) {
+// variant "get" is the App Store style capsule; the others are regular buttons.
+export function CopyButton({ text, label = 'Copy Link', message = 'Link copied', variant = 'primary', size, icon: Icon = LinkIcon, className = '' }) {
   const [done, setDone] = useState(false);
   const toast = useToast();
   const timer = useRef();
@@ -76,16 +79,21 @@ export function CopyButton({ text, label = 'Copy link', message = 'Link copied',
     }
   }
 
-  const iconSize = size === 'sm' ? 14 : 16;
+  if (variant === 'get') {
+    return (
+      <motion.button type="button" className={`get-pill ${done ? 'is-done' : ''} ${className}`} onClick={onClick} whileTap={{ scale: 0.92 }} transition={spring} aria-label={message.replace('copied', 'copy')}>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span key={done ? 'done' : 'idle'} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
+            {done ? <Check size={15} strokeWidth={3.2} /> : label}
+          </motion.span>
+        </AnimatePresence>
+      </motion.button>
+    );
+  }
+
+  const iconSize = size === 'sm' ? 14 : 17;
   return (
-    <motion.button
-      type="button"
-      whileTap={{ scale: 0.96 }}
-      transition={spring}
-      className={`btn btn-${variant} ${size ? `btn-${size}` : ''}`}
-      onClick={onClick}
-      aria-label={label || message}
-    >
+    <motion.button type="button" whileTap={{ scale: 0.95 }} transition={spring} className={`btn btn-${variant} ${size ? `btn-${size}` : ''} ${className}`} onClick={onClick} aria-label={label || message}>
       <span className="swap" style={{ width: iconSize, height: iconSize }}>
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -104,6 +112,28 @@ export function CopyButton({ text, label = 'Copy link', message = 'Link copied',
   );
 }
 
+// iOS-style segmented control with a sliding thumb. options: [{ id, label, icon?, badge? }]
+export function Segmented({ options, value, onChange, label, size }) {
+  const group = useId();
+  return (
+    <div className={`segmented ${size ? `segmented-${size}` : ''}`} role="radiogroup" aria-label={label}>
+      {options.map((o) => {
+        const active = o.id === value;
+        return (
+          <button key={o.id} type="button" role="radio" aria-checked={active} className={`segment ${active ? 'is-active' : ''}`} onClick={() => onChange(o.id)}>
+            {active && <motion.span layoutId={`thumb-${group}`} className="segment-thumb" transition={spring} />}
+            <span className="segment-label">
+              {o.icon}
+              {o.label}
+              {o.badge !== undefined && <span className="segment-badge">{o.badge}</span>}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Field({ label, hint, error, children }) {
   const id = useId();
   return (
@@ -115,7 +145,7 @@ export function Field({ label, hint, error, children }) {
   );
 }
 
-export function Sheet({ open, onClose, title, subtitle, children, width = 440 }) {
+export function Sheet({ open, onClose, title, subtitle, children, width = 460 }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -131,7 +161,7 @@ export function Sheet({ open, onClose, title, subtitle, children, width = 440 })
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: 0.22 }}
           onMouseDown={(e) => e.target === e.currentTarget && onClose()}
         >
           <motion.div
@@ -140,18 +170,18 @@ export function Sheet({ open, onClose, title, subtitle, children, width = 440 })
             aria-label={title}
             className="sheet"
             style={{ maxWidth: width }}
-            initial={{ opacity: 0, y: 48, scale: 0.95 }}
+            initial={{ opacity: 0, y: 60, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 28, scale: 0.97 }}
-            transition={spring}
+            exit={{ opacity: 0, y: 30, scale: 0.97 }}
+            transition={softSpring}
           >
             <div className="sheet-head">
               <div>
                 <h2>{title}</h2>
                 {subtitle && <p>{subtitle}</p>}
               </div>
-              <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
-                <X size={18} />
+              <button type="button" className="icon-btn icon-btn-filled" onClick={onClose} aria-label="Close">
+                <X size={17} strokeWidth={2.4} />
               </button>
             </div>
             {children}
@@ -164,16 +194,18 @@ export function Sheet({ open, onClose, title, subtitle, children, width = 440 })
 }
 
 // items: { label, icon, onSelect, danger } | 'separator' | falsy (skipped)
-export function Menu({ items, label = 'More actions' }) {
+export function Menu({ items, label = 'More actions', trigger = 'icon' }) {
   const [open, setOpen] = useState(false);
   const [upward, setUpward] = useState(false);
   const ref = useRef(null);
 
-  function toggle() {
+  function toggle(e) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!open) {
       // Open upward when the list would run off the bottom of the window.
       const rect = ref.current.getBoundingClientRect();
-      const needed = items.filter(Boolean).length * 38 + 24;
+      const needed = items.filter(Boolean).length * 40 + 24;
       setUpward(window.innerHeight - rect.bottom < needed && rect.top > needed);
     }
     setOpen((o) => !o);
@@ -194,18 +226,25 @@ export function Menu({ items, label = 'More actions' }) {
   const visible = items.filter(Boolean);
   return (
     <div className="menu-wrap" ref={ref}>
-      <button type="button" className="icon-btn" aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={toggle}>
-        <Ellipsis size={18} />
+      <button
+        type="button"
+        className={trigger === 'glass' ? 'icon-btn icon-btn-glass glass' : 'icon-btn'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={toggle}
+      >
+        <Ellipsis size={19} strokeWidth={2.4} />
       </button>
       <AnimatePresence>
         {open && (
           <motion.div
             role="menu"
-            className={`menu ${upward ? 'menu-up' : ''}`}
-            initial={{ opacity: 0, scale: 0.86, y: upward ? 8 : -8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
-            transition={{ type: 'spring', stiffness: 560, damping: 34 }}
+            className={`menu glass ${upward ? 'menu-up' : ''}`}
+            initial={{ opacity: 0, scale: 0.8, y: upward ? 10 : -10, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, scale: 0.92, filter: 'blur(4px)', transition: { duration: 0.14 } }}
+            transition={{ type: 'spring', stiffness: 520, damping: 32 }}
           >
             {visible.map((item, i) =>
               item === 'separator' ? (
@@ -216,13 +255,14 @@ export function Menu({ items, label = 'More actions' }) {
                   type="button"
                   role="menuitem"
                   className={`menu-item ${item.danger ? 'danger' : ''}`}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setOpen(false);
                     item.onSelect();
                   }}
                 >
                   <span>{item.label}</span>
-                  {item.icon && <item.icon size={16} strokeWidth={2} />}
+                  {item.icon && <item.icon size={17} strokeWidth={2} />}
                 </button>
               ),
             )}
