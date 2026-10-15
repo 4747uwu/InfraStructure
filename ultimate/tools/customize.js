@@ -130,7 +130,11 @@ const log = [];
 function edit(rel, pairs) {
   const file = path.join(ROOT, rel);
   let text = fs.readFileSync(file, 'utf8');
-  for (const [find, replace, expected = 1] of pairs) {
+  // A Windows checkout may hold CRLF line endings; multi-line anchors are written with \n.
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  for (const [rawFind, rawReplace, expected = 1] of pairs) {
+    const find = rawFind.replace(/\r?\n/g, eol);
+    const replace = rawReplace.replace(/\r?\n/g, eol);
     const count = text.split(find).length - 1;
     if (count !== expected) {
       fail(`${rel}: expected ${expected} of ${JSON.stringify(find)}, found ${count}. The template has changed; update tools/customize.js.`);
