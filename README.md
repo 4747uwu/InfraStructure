@@ -73,6 +73,42 @@ come from it, so the script follows each client's own settings. It deletes nothi
 wipes `dist\` to stop a stale installer shipping, this script instead refuses to upload any installer
 that was not written during the current run.
 
+## Server monitoring
+
+The **Servers** tab shows each client server's CPU, memory and DICOM storage, with 30 days of
+history, Orthanc's own counts (patients, studies, series, instances) and every disk.
+
+Each server runs a small agent (`server/agent/routerhub-agent.sh`: bash and curl, nothing else)
+that reports every minute. To add a server:
+
+1. In the app: **Servers > Add Server**, give it a name and optionally its client.
+2. Run the one-line command it shows, as root, on that server:
+
+```
+curl -fsSL http://HUB/agent/install.sh | sudo bash -s -- --hub http://HUB --token ra_...
+```
+
+It installs the agent to `/opt/routerhub-agent`, writes `/etc/routerhub-agent.conf`, sends a first
+report and schedules the rest with a systemd timer (cron where there is no systemd).
+
+The agent finds Orthanc by itself: in Docker it follows the container's own storage setting
+(`ORTHANC__STORAGE_DIRECTORY` or `StorageDirectory` in its mounted config) to the folder on the
+host; otherwise it tries port 8042 and `/etc/orthanc`. Add options to the command when needed:
+
+| Option | When |
+| --- | --- |
+| `--orthanc-user U --orthanc-pass P` | Orthanc's REST API asks for a login (the page says "Needs a login") |
+| `--orthanc-url http://127.0.0.1:8042` | Orthanc is not in Docker and not on port 8042 |
+| `--storage /mnt/dicom` | Also watch a mounted storage folder that Orthanc does not report |
+| `--interval 120` | Report less often (minimum 30 seconds) |
+
+Re-running the command updates the agent and its settings. To pause it on a server:
+`systemctl disable --now routerhub-agent.timer`.
+
+Alerts: storage at 85% (critical at 95%), memory at 90% (95%), CPU at 90% (97%), a server that has
+stopped reporting, an Orthanc that is not answering, and a storage folder under `/mnt` or `/media`
+that is really on the system disk because its volume is not mounted.
+
 ## Deploying with GitHub Actions
 
 Every push to `main` builds a container image, pushes it to GitHub's registry (ghcr.io) and switches

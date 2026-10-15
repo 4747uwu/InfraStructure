@@ -1,4 +1,4 @@
-import { ChevronDown, SquareKanban, LayoutGrid, LogOut, Settings as SettingsIcon } from 'lucide-react';
+import { Activity, ChevronDown, LayoutGrid, LogOut, Settings as SettingsIcon, SquareKanban } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useOutlet } from 'react-router-dom';
@@ -66,7 +66,7 @@ export default function Shell() {
   const location = useLocation();
   const outlet = useOutlet();
   const path = location.pathname;
-  const section = path.startsWith('/board') ? 'board' : path.startsWith('/settings') ? 'settings' : 'clients';
+  const section = path.startsWith('/board') ? 'board' : path.startsWith('/settings') ? 'settings' : path.startsWith('/servers') ? 'servers' : 'clients';
 
   return (
     <div className="app">
@@ -82,6 +82,9 @@ export default function Shell() {
         <nav className="tabbar glass" aria-label="Sections">
           <Tab to="/" icon={LayoutGrid} active={section === 'clients'}>
             Clients
+          </Tab>
+          <Tab to="/servers" icon={Activity} active={section === 'servers'}>
+            Servers
           </Tab>
           <Tab to="/board" icon={SquareKanban} active={section === 'board'}>
             Board

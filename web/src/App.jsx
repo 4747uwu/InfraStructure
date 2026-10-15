@@ -8,6 +8,8 @@ import Board from './pages/Board.jsx';
 import ClientDetail from './pages/ClientDetail.jsx';
 import Clients from './pages/Clients.jsx';
 import Login from './pages/Login.jsx';
+import ServerDetail from './pages/ServerDetail.jsx';
+import Servers from './pages/Servers.jsx';
 import Settings from './pages/Settings.jsx';
 import Unlock from './pages/Unlock.jsx';
 
@@ -28,6 +30,8 @@ function Workspace() {
       <Route element={user ? <Shell /> : <Navigate to="/login" replace />}>
         <Route index element={<Clients />} />
         <Route path="clients/:slug" element={<ClientDetail />} />
+        <Route path="servers" element={<Servers />} />
+        <Route path="servers/:id" element={<ServerDetail />} />
         <Route path="board" element={<Board />} />
         <Route path="settings" element={isMaster ? <Settings /> : <Navigate to="/" replace />} />
       </Route>

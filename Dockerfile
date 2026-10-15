@@ -28,6 +28,7 @@ RUN mkdir -p /app/storage && chown node:node /app/storage
 COPY --from=deps /app/server/node_modules ./server/node_modules
 COPY server/package.json ./server/
 COPY server/src ./server/src
+COPY server/agent ./server/agent
 COPY --from=web /app/web/dist ./web/dist
 
 USER node

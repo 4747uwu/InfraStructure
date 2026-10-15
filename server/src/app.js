@@ -10,6 +10,7 @@ import clientRoutes from './routes/clients.js';
 import { downloads, publicApi } from './routes/public.js';
 import releaseRoutes from './routes/releases.js';
 import settingsRoutes from './routes/settings.js';
+import monitorRoutes from './routes/monitor.js';
 import taskRoutes from './routes/tasks.js';
 
 // Sessions ride on a cookie, so refuse state-changing calls that a page on another origin started.
@@ -53,7 +54,7 @@ export function createApp() {
     res.json({ ok: true });
   });
   api.use(sameOrigin, express.json({ limit: '100kb' }), loadAuth);
-  api.use(authRoutes, publicApi, clientRoutes, releaseRoutes, settingsRoutes, taskRoutes);
+  api.use(authRoutes, publicApi, clientRoutes, releaseRoutes, settingsRoutes, taskRoutes, monitorRoutes);
   api.use((_req, _res, next) => next(new HttpError(404, 'Not found.')));
   api.use((err, _req, res, _next) => {
     if (res.headersSent) return res.destroy();
@@ -65,6 +66,15 @@ export function createApp() {
   app.use('/api', api);
 
   app.use(downloads);
+
+  // The monitoring agent and its installer, fetched by `curl ... | sudo bash` on client servers.
+  const agentDir = join(config.root, 'server', 'agent');
+  for (const file of ['install.sh', 'routerhub-agent.sh']) {
+    app.get(`/agent/${file}`, (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      res.type('text/x-shellscript; charset=utf-8').sendFile(join(agentDir, file));
+    });
+  }
 
   const indexHtml = join(config.webDir, 'index.html');
   app.use(express.static(config.webDir, { index: false, maxAge: '1h' }));

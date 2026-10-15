@@ -26,6 +26,10 @@ export async function connect() {
     clients().createIndex({ 'macIntel.directToken': 1 }, { unique: true, sparse: true }),
     clients().createIndex({ 'macIntel.protectedToken': 1 }, { unique: true, sparse: true }),
     tasks().createIndex({ status: 1, order: 1 }),
+    servers().createIndex({ tokenHash: 1 }, { unique: true }),
+    metrics().createIndex({ serverId: 1, at: 1 }),
+    // Monitoring history is kept for 30 days, then MongoDB drops it.
+    metrics().createIndex({ at: 1 }, { expireAfterSeconds: 30 * 24 * 3600 }),
   ]);
   return db;
 }
@@ -39,6 +43,8 @@ export const clients = () => db.collection('clients');
 export const releases = () => db.collection('releases');
 export const settings = () => db.collection('settings');
 export const tasks = () => db.collection('tasks');
+export const servers = () => db.collection('servers');
+export const metrics = () => db.collection('metrics');
 
 export const SETTINGS_ID = 'main';
 export const getSettings = () => settings().findOne({ _id: SETTINGS_ID });

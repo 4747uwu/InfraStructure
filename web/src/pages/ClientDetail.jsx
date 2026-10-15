@@ -247,6 +247,7 @@ export default function ClientDetail() {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [openCards, setOpenCards] = useState(0);
+  const [servers, setServers] = useState([]);
   const [error, setError] = useState('');
   const [platformId, setPlatformId] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -272,6 +273,9 @@ export default function ClientDetail() {
     if (!data) return;
     api('/tasks')
       .then((d) => setOpenCards(d.tasks.filter((t) => t.clientId === data.client.id && t.status !== 'completed').length))
+      .catch(() => {});
+    api('/servers')
+      .then((d) => setServers(d.servers.filter((s) => s.clientId === data.client.id)))
       .catch(() => {});
   }, [data]);
 
@@ -418,11 +422,21 @@ export default function ClientDetail() {
           onChange={setPlatformId}
           options={client.platforms.map((p) => ({ id: p.id, label: platformById(p.id).label, icon: <PlatformIcon id={p.id} size={15} />, badge: p.count }))}
         />
-        <Link to={`/board?client=${client.id}`} className="board-link">
-          <SquareKanban size={16} strokeWidth={2.2} />
-          {openCards ? `${plural(openCards, 'open change')}` : 'No open changes'}
-          <ChevronRight size={15} strokeWidth={2.4} />
-        </Link>
+        <div className="platform-links">
+          {servers.map((s) => (
+            <Link key={s.id} to={`/servers/${s.id}`} className={`board-link server-link is-${s.status}`} title={`Server ${s.name}`}>
+              <span className="status-dot" />
+              {s.name}
+              {s.summary?.storagePct != null && <span className="server-link-pct">Storage {Math.round(s.summary.storagePct)}%</span>}
+              <ChevronRight size={15} strokeWidth={2.4} />
+            </Link>
+          ))}
+          <Link to={`/board?client=${client.id}`} className="board-link">
+            <SquareKanban size={16} strokeWidth={2.2} />
+            {openCards ? `${plural(openCards, 'open change')}` : 'No open changes'}
+            <ChevronRight size={15} strokeWidth={2.4} />
+          </Link>
+        </div>
       </div>
 
       <AnimatePresence mode="wait" initial={false}>
