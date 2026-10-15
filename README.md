@@ -109,6 +109,36 @@ Alerts: storage at 85% (critical at 95%), memory at 90% (95%), CPU at 90% (97%),
 stopped reporting, an Orthanc that is not answering, and a storage folder under `/mnt` or `/media`
 that is really on the system disk because its volume is not mounted.
 
+## Router Builder
+
+**Build** (master only) makes a complete Windows installer for a new client from the router code in
+`ultimate/`, a copy of the Ganesham Teleradiology router. You enter:
+
+| Setting | Becomes |
+| --- | --- |
+| Product name | window title, wordmark, Start menu entry, installer name, package and engine names |
+| Peer 1 / Peer 2 URL | the receivers studies are sent to (automatic failover from 1 to 2) |
+| Main / Backup API URL | login, study notifications, error reports and lab status (failover between them) |
+| DICOM port, AE title, local API port | the defaults a fresh install starts with |
+| Compression | whether JPEG 2000 lossy compression is on by default (the PACS's per-centre setting still overrides) |
+| Logo (optional) | app, shortcut and installer icons; a neutral router icon otherwise |
+| Advanced (optional) | receiver login and the Settings PIN; the Ganesham values otherwise |
+
+The build runs on the server in the `builder` container: `ultimate/tools/customize.js` applies the
+settings, Go 1.20.14 builds the engine for Windows 7 and later, electron-builder (with Wine) packages
+the NSIS installer, and the result is uploaded as the client's current Windows build. It takes a few
+minutes; the Build page shows each step and the full log.
+
+`customize.js` is strict: every value it replaces must be found exactly where it expects in the
+template. If `ultimate/` is changed so an anchor moves, builds stop with the file and text to fix,
+instead of producing a router that is half one client and half another. Two Ganesham values remain on
+purpose: an internal data subfolder name (inside a per-product folder, so it never collides) and the
+default receiver login when none is entered.
+
+To change what every future router contains, edit `ultimate/` and push; the builder image is rebuilt
+with it. The image build also builds one router as a rehearsal, so a broken template fails the
+deployment instead of the first real build.
+
 ## Deploying with GitHub Actions
 
 Every push to `main` builds a container image, pushes it to GitHub's registry (ghcr.io) and switches

@@ -199,7 +199,7 @@ function VersionRow({ release, isMaster, actions }) {
         {release.notes && <p className="version-notes">{release.notes}</p>}
         <p className="version-meta" title={`SHA-256 ${release.sha256}`}>
           Build {release.build} · {release.fileName} · {formatBytes(release.size)} · {plural(release.downloads, 'download')} ·{' '}
-          {release.source === 'script' ? 'publish script' : release.uploadedBy}
+          {{ script: 'publish script', builder: 'Router Builder' }[release.source] || release.uploadedBy}
         </p>
       </div>
 

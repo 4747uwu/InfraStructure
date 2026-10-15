@@ -132,7 +132,7 @@ router.put('/upload', requireUploader, async (req, res) => {
     size,
     sha256,
     notes,
-    source: req.auth.role === 'deploy' ? 'script' : 'web',
+    source: { deploy: 'script', builder: 'builder' }[req.auth.role] || 'web',
     uploadedBy: req.auth.username,
     uploadedAt: new Date(),
     directToken: newToken(),

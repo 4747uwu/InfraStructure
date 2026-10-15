@@ -5,6 +5,7 @@ import Shell from './components/Shell.jsx';
 import { ToastProvider } from './components/toast.jsx';
 import { Logo } from './components/ui.jsx';
 import Board from './pages/Board.jsx';
+import Build from './pages/Build.jsx';
 import ClientDetail from './pages/ClientDetail.jsx';
 import Clients from './pages/Clients.jsx';
 import Login from './pages/Login.jsx';
@@ -33,6 +34,7 @@ function Workspace() {
         <Route path="servers" element={<Servers />} />
         <Route path="servers/:id" element={<ServerDetail />} />
         <Route path="board" element={<Board />} />
+        <Route path="build" element={isMaster ? <Build /> : <Navigate to="/" replace />} />
         <Route path="settings" element={isMaster ? <Settings /> : <Navigate to="/" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ganesham Teleradiology</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --teal: #6558e0;
+      --brand-x: #f5a524;
+      --blue: #1a47e0;
+      --blue-deep: #1638b8;
+      --cream: #f6f5f1;
+      --ink: #10212e;
+      --ink-soft: #475663;
+      --line: #e4e2da;
+    }
+
+    html, body {
+      min-height: 100vh;
+      font-family: 'Schibsted Grotesk', system-ui, sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* One centred sign-in card. No brand panel and no motion: the operator
+       is here to log in, and the form is the whole screen. */
+    .stage {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 16px;
+    }
+    .auth {
+      width: 100%; max-width: 420px;
+      display: flex; flex-direction: column;
+    }
+
+    /* The accented tail of the inline wordmark. This page carries its own
+       stylesheet and does not load app.css, so the class is defined here too. */
+    .brand-x { color: var(--brand-x); }
+
+    .wordmark {
+      text-align: center;
+      font-weight: 800; font-size: 26px;
+      letter-spacing: -.02em; line-height: 1.15;
+    }
+    .sub {
+      text-align: center; color: var(--ink-soft);
+      font-size: 13.5px; line-height: 1.6;
+      margin: 12px auto 28px; max-width: 320px;
+    }
+
+    /* form fields */
+    .field { position: relative; margin-bottom: 14px; }
+    .field > svg {
+      position: absolute; left: 16px; top: 50%;
+      transform: translateY(-50%); color: #aab2b9; pointer-events: none;
+    }
+    .field input {
+      width: 100%; height: 54px;
+      padding: 0 16px 0 44px;
+      border: 1px solid var(--line); border-radius: 12px;
+      background: #fff; font-size: 14px; font-family: inherit;
+      color: var(--ink); outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input.has-pw { padding-right: 50px; }
+    .field input::placeholder { color: #9aa3ab; }
+    .field input:focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(19,163,156,.13);
+    }
+    .toggle-pw {
+      position: absolute; right: 14px; top: 50%;
+      transform: translateY(-50%);
+      width: 28px; height: 28px;
+      display: grid; place-items: center;
+      border-radius: 6px; color: #9aa3ab;
+      cursor: pointer; background: transparent; border: 0;
+      transition: color .12s, background .12s;
+    }
+    .toggle-pw:hover { color: var(--teal); background: rgba(19,163,156,.06); }
+
+    /* status / spinner / error */
+    #statusMsg {
+      text-align: center; font-size: 12px;
+      color: var(--ink-soft); min-height: 16px; margin-bottom: 4px;
+    }
+    #spinner { display: none; }
+    #spinner.show { display: block; }
+
+    #errBox {
+      display: none; align-items: center; gap: 8px;
+      padding: 10px 13px; margin-bottom: 12px;
+      background: #fff4f4; border: 1px solid #f5c2c2;
+      border-radius: 10px; color: #a83232; font-size: 12.5px;
+    }
+    #errBox.show { display: flex; }
+
+    /* sign-in button */
+    #loginBtn {
+      width: 100%; height: 56px; margin-top: 8px;
+      border: none; border-radius: 12px; cursor: pointer;
+      background: linear-gradient(180deg, var(--blue) 0%, var(--blue-deep) 100%);
+      color: #fff; font-family: inherit; font-size: 15px;
+      font-weight: 600; letter-spacing: .01em;
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+      box-shadow: 0 8px 22px -8px rgba(26,71,224,.6);
+      transition: box-shadow .15s, filter .15s;
+    }
+    #loginBtn:hover:not(:disabled) {
+      filter: brightness(1.06);
+      box-shadow: 0 12px 28px -8px rgba(26,71,224,.7);
+    }
+    #loginBtn:disabled {
+      background: #cdd2d8; color: #7c8590;
+      cursor: not-allowed; box-shadow: none;
+    }
+
+    .spin-sm { animation: ss-spin .8s linear infinite; }
+    @keyframes ss-spin { to { transform: rotate(360deg); } }
+
+    /* auth footer */
+    .auth-foot {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 28px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; letter-spacing: .08em; color: #b3bac0;
+    }
+    .auth-foot button {
+      background: transparent; border: 0;
+      color: inherit; font: inherit; font-size: 14px;
+      cursor: pointer; padding: 0;
+    }
+    .auth-foot button:hover { color: var(--ink-soft); }
+
+    /* ── SETTINGS OVERLAY (light theme) ── */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(16,33,46,.5);
+      z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .overlay.show { display: flex; }
+
+    .settings-panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 24px 64px rgba(16,33,46,.18);
+      width: 380px; max-width: calc(100vw - 32px);
+      padding: 28px 28px 22px;
+    }
+    .settings-panel h2 {
+      font-size: 15px; font-weight: 700; color: var(--ink);
+      margin-bottom: 18px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .close-btn {
+      background: none; border: none; cursor: pointer;
+      color: #9aa3ab; font-size: 18px; line-height: 1; padding: 0 2px;
+    }
+    .close-btn:hover { color: var(--ink); }
+
+    .gate-hint { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 14px; }
+    .gate-err { font-size: 12px; color: #a83232; margin-top: 6px; min-height: 16px; }
+
+    .settings-form { display: none; }
+    .settings-form.show { display: block; }
+
+    .sep-label {
+      font-size: 10px; font-weight: 600; letter-spacing: .1em;
+      text-transform: uppercase; color: #9aa3ab;
+      font-family: 'JetBrains Mono', monospace;
+      margin: 16px 0 10px;
+    }
+    .cfg-field { margin-bottom: 12px; }
+    .cfg-field label {
+      display: block; font-size: 12px; font-weight: 500;
+      color: var(--ink-soft); margin-bottom: 5px;
+    }
+    .cfg-field input {
+      width: 100%; padding: 10px 12px;
+      background: var(--cream); border: 1px solid var(--line);
+      border-radius: 8px; font-size: 13px; color: var(--ink);
+      font-family: inherit; outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .cfg-field input:focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(19,163,156,.1);
+    }
+    .save-row { margin-top: 16px; display: flex; gap: 8px; }
+    .btn-save {
+      flex: 1; height: 44px;
+      background: linear-gradient(180deg, var(--blue), var(--blue-deep));
+      color: #fff; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .btn-save:hover { filter: brightness(1.06); }
+    .btn-cancel {
+      flex: 1; height: 44px;
+      background: var(--cream); border: 1px solid var(--line);
+      color: var(--ink-soft); border-radius: 8px;
+      font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer;
+    }
+    .btn-cancel:hover { background: #eeedea; }
+  </style>
+</head>
+<body>
+<div class="stage">
+  <section class="auth">
+    <div class="wordmark">Ganesham<span class="brand-x"> Teleradiology</span></div>
+    <p class="sub">Sign in to access your worklists, reports, and DICOM studies.</p>
+
+    <div id="statusMsg"></div>
+
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <!-- error box -->
+      <div id="errBox">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span id="errTxt"></span>
+      </div>
+
+      <!-- username -->
+      <div class="field">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/>
+          <path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>
+        </svg>
+        <input type="text" id="username" placeholder="Username / Email"
+               autocomplete="username" required autofocus>
+      </div>
+
+      <!-- password -->
+      <div class="field">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="11" width="16" height="10" rx="2"/>
+          <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+        </svg>
+        <input type="password" id="password" placeholder="Password"
+               autocomplete="current-password" required class="has-pw">
+        <button type="button" class="toggle-pw" id="togglePwBtn" aria-label="Show password">
+          <svg id="eyeIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- hidden spinner div — login.js toggles .show; button loading state handled below -->
+      <div id="spinner"></div>
+
+      <button type="submit" id="loginBtn">
+        <span id="btnContent" style="display:flex;align-items:center;gap:9px;">Sign in</span>
+      </button>
+    </form>
+
+    <div class="auth-foot">
+      <span>&copy; 2026 Ganesham Teleradiology</span>
+      <button type="button" onclick="openGate()" aria-label="Settings">&#9881;</button>
+    </div>
+  </section>
+</div>
+
+<!-- ─── Settings overlay ─── -->
+<div class="overlay" id="overlay">
+  <div class="settings-panel">
+    <h2>
+      Configuration
+      <button class="close-btn" onclick="closeOverlay()">&#10005;</button>
+    </h2>
+
+    <div class="gate" id="gate">
+      <div class="gate-hint">Enter the settings password to continue.</div>
+      <div class="cfg-field">
+        <label for="gatePass">Settings password</label>
+        <input type="password" id="gatePass" placeholder="&#8226;&#8226;&#8226;&#8226;"
+               autocomplete="off" onkeydown="gateKeydown(event)">
+      </div>
+      <button class="btn-save" style="width:100%;margin-top:8px" onclick="unlockSettings()">Unlock</button>
+      <div class="gate-err" id="gateErr"></div>
+    </div>
+
+    <div class="settings-form" id="settingsForm">
+      <div class="sep-label">Auth API</div>
+      <div class="cfg-field">
+        <label for="cfgApiUrl">Login endpoint URL</label>
+        <input type="url" id="cfgApiUrl"
+               placeholder="https://pacs.ganeshamteleradiology.in/api/auth/lab-login">
+      </div>
+
+      <div class="sep-label">PACS Receiver</div>
+      <div class="cfg-field">
+        <label for="cfgPeerUrl">Receiver URL</label>
+        <input type="url" id="cfgPeerUrl" placeholder="https://router.ganeshamteleradiology.in">
+      </div>
+      <div class="cfg-field">
+        <label for="cfgPeerUser">Username</label>
+        <input type="text" id="cfgPeerUser" placeholder="alice" autocomplete="off">
+      </div>
+      <div class="cfg-field">
+        <label for="cfgPeerPass">Password</label>
+        <input type="password" id="cfgPeerPass" placeholder="leave blank to keep current" autocomplete="off">
+      </div>
+
+      <div class="save-row">
+        <button class="btn-cancel" onclick="closeOverlay()">Cancel</button>
+        <button class="btn-save" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // password toggle
+  (function () {
+    var pwInput = document.getElementById('password');
+    var btn = document.getElementById('togglePwBtn');
+    var icon = document.getElementById('eyeIcon');
+    var EYE_OPEN = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    var EYE_SHUT = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    var showing = false;
+    btn.addEventListener('click', function () {
+      showing = !showing;
+      pwInput.type = showing ? 'text' : 'password';
+      icon.innerHTML = showing ? EYE_SHUT : EYE_OPEN;
+      btn.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+    });
+  })();
+</script>
+
+<!-- login.js: handleLogin, openGate, closeOverlay, gateKeydown, unlockSettings, saveSettings -->
+<script src="login.js"></script>
+
+<!-- override login.js UI helpers to match this page -->
+<script>
+  function setLoading(on) {
+    document.getElementById('loginBtn').disabled = on;
+    var content = document.getElementById('btnContent');
+    if (!content) return;
+    if (on) {
+      content.innerHTML =
+        '<svg class="spin-sm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>' +
+        'Signing in…';
+    } else {
+      content.textContent = 'Sign in';
+    }
+  }
+  function showErr(msg) {
+    var box = document.getElementById('errBox');
+    document.getElementById('errTxt').textContent = msg;
+    box.classList.add('show');
+  }
+  function clearErr() {
+    document.getElementById('errBox').classList.remove('show');
+  }
+  function setStatus(msg) {
+    document.getElementById('statusMsg').textContent = msg;
+  }
+</script>
+</body>
+</html>

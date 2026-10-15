@@ -52,6 +52,27 @@ services:
     stop_grace_period: 30s
     logging: *logging
 
+  # Router Builder: builds client routers from the template on request (Build page).
+  # Capped so a build never starves the other services on this server.
+  builder:
+    image: ${IMAGE}-builder:${IMAGE_TAG}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mongo:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: routerhub
+      HUB_URL: http://app:4600
+    cpus: 2.5
+    mem_limit: 4g
+    tmpfs:
+      - /tmp
+    logging: *logging
+
   # HTTPS entrance, started only when a domain is configured (COMPOSE_PROFILES=https).
   # It needs ports 80 and 443 and obtains and renews its certificates by itself.
   caddy:

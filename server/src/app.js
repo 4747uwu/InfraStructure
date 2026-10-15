@@ -10,6 +10,7 @@ import clientRoutes from './routes/clients.js';
 import { downloads, publicApi } from './routes/public.js';
 import releaseRoutes from './routes/releases.js';
 import settingsRoutes from './routes/settings.js';
+import buildRoutes from './routes/builds.js';
 import monitorRoutes from './routes/monitor.js';
 import taskRoutes from './routes/tasks.js';
 
@@ -53,13 +54,17 @@ export function createApp() {
     await ping();
     res.json({ ok: true });
   });
-  api.use(sameOrigin, express.json({ limit: '100kb' }), loadAuth);
-  api.use(authRoutes, publicApi, clientRoutes, releaseRoutes, settingsRoutes, taskRoutes, monitorRoutes);
+  // Small JSON bodies everywhere, except a new router build, which may carry a logo (up to 2 MB as PNG).
+  const smallJson = express.json({ limit: '100kb' });
+  const buildJson = express.json({ limit: '4mb' });
+  api.use(sameOrigin, (req, res, next) => (req.method === 'POST' && req.path === '/builds' ? buildJson : smallJson)(req, res, next), loadAuth);
+  api.use(authRoutes, publicApi, clientRoutes, releaseRoutes, settingsRoutes, taskRoutes, monitorRoutes, buildRoutes);
   api.use((_req, _res, next) => next(new HttpError(404, 'Not found.')));
   api.use((err, _req, res, _next) => {
     if (res.headersSent) return res.destroy();
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, ...err.extra });
     if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'The request was not valid JSON.' });
+    if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'The request is too large. A logo must be 2 MB or smaller.' });
     console.error(err);
     res.status(500).json({ error: 'Something went wrong on the server.' });
   });

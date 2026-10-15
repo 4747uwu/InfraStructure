@@ -15,6 +15,9 @@ export async function bootstrap() {
     { $setOnInsert: { linkSecret: newToken(32), downloadPassword: null, deployToken: null, createdAt: new Date() } },
     { upsert: true },
   );
+  // Credential the builder container uses to upload the installers it makes. It only
+  // ever travels inside the stack (builder -> app); both read it from this database.
+  await settings().updateOne({ _id: SETTINGS_ID, builderToken: { $exists: false } }, { $set: { builderToken: `rb_${newToken(32)}` } });
 
   // Clients created before Mac platforms existed get their Mac link tokens. Their existing
   // links, current version and files are untouched: those are now the Windows ones.

@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, LayoutGrid, LogOut, Settings as SettingsIcon, SquareKanban } from 'lucide-react';
+import { Activity, ChevronDown, Hammer, LayoutGrid, LogOut, Settings as SettingsIcon, SquareKanban } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useOutlet } from 'react-router-dom';
@@ -71,7 +71,7 @@ export default function Shell() {
   const location = useLocation();
   const outlet = useOutlet();
   const path = location.pathname;
-  const section = path.startsWith('/board') ? 'board' : path.startsWith('/settings') ? 'settings' : path.startsWith('/servers') ? 'servers' : 'clients';
+  const section = path.startsWith('/board') ? 'board' : path.startsWith('/settings') ? 'settings' : path.startsWith('/servers') ? 'servers' : path.startsWith('/build') ? 'build' : 'clients';
 
   return (
     <div className="app">
@@ -94,6 +94,11 @@ export default function Shell() {
           <Tab to="/board" icon={SquareKanban} active={section === 'board'}>
             Board
           </Tab>
+          {isMaster && (
+            <Tab to="/build" icon={Hammer} active={section === 'build'}>
+              Build
+            </Tab>
+          )}
           {isMaster && (
             <Tab to="/settings" icon={SettingsIcon} active={section === 'settings'}>
               Settings

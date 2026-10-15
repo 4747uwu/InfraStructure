@@ -1,0 +1,13 @@
+{
+  "name": "routerhub-builder",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Builds client routers from ultimate/ for Router Hub",
+  "scripts": {
+    "start": "node worker.mjs"
+  },
+  "dependencies": {
+    "mongodb": "^7.7.0"
+  }
+}

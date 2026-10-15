@@ -44,12 +44,15 @@ export async function loadAuth(req, _res, next) {
 
   const bearer = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '');
   if (bearer) {
-    const stored = (await getSettings())?.deployToken;
+    const s = await getSettings();
+    const stored = s?.deployToken;
     if (stored && safeEqual(sha256Hex(bearer[1]), stored.hash)) {
       req.auth = { role: 'deploy', username: 'publish script' };
       settings()
         .updateOne({ _id: SETTINGS_ID }, { $set: { 'deployToken.lastUsedAt': new Date() } })
         .catch(() => {});
+    } else if (s?.builderToken && safeEqual(bearer[1], s.builderToken)) {
+      req.auth = { role: 'builder', username: 'Router Builder' };
     }
     return next();
   }
@@ -74,6 +77,6 @@ export function requireMaster(req, _res, next) {
 }
 
 export function requireUploader(req, _res, next) {
-  if (req.auth?.role === 'master' || req.auth?.role === 'deploy') return next();
+  if (req.auth?.role === 'master' || req.auth?.role === 'deploy' || req.auth?.role === 'builder') return next();
   next(new HttpError(req.auth ? 403 : 401, req.auth ? 'Only the master account can upload.' : 'Sign in or send a deploy token.'));
 }

@@ -35,6 +35,8 @@ export async function connect() {
     alerts().createIndex({ openedAt: -1 }),
     // Resolved alerts are kept for 90 days of history; open ones (resolvedAt null) never expire.
     alerts().createIndex({ resolvedAt: 1 }, { expireAfterSeconds: 90 * 24 * 3600 }),
+    builds().createIndex({ status: 1, createdAt: 1 }),
+    builds().createIndex({ clientId: 1, createdAt: -1 }),
   ]);
   return db;
 }
@@ -51,6 +53,8 @@ export const tasks = () => db.collection('tasks');
 export const servers = () => db.collection('servers');
 export const metrics = () => db.collection('metrics');
 export const alerts = () => db.collection('alerts');
+export const builds = () => db.collection('builds');
+export const builderStatus = () => db.collection('builderStatus');
 
 export const SETTINGS_ID = 'main';
 export const getSettings = () => settings().findOne({ _id: SETTINGS_ID });

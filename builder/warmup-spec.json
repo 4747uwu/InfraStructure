@@ -1,0 +1,12 @@
+{
+  "productName": "Warmup Router",
+  "aet": "WARMUP",
+  "dicomPort": 8899,
+  "httpPort": 9044,
+  "peer1": "https://router.example.invalid",
+  "peer2": "https://router2.example.invalid",
+  "apiMain": "https://pacs.example.invalid",
+  "apiBackup": "https://pacs2.example.invalid",
+  "compression": false,
+  "version": "1.0.0"
+}
