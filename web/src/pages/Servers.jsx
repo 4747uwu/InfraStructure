@@ -1,5 +1,5 @@
 import { Activity, Plus, ServerCog } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
@@ -34,19 +34,99 @@ export function ServerIcon({ server, client, size = 48 }) {
   );
 }
 
-// Shown once after adding a server or asking for a new token.
+// Quotes a value for a POSIX shell only when it needs it, so simple values stay readable.
+export function shellQuote(value) {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// The install command with the optional Orthanc settings appended. `mask` hides the password for display.
+export function buildInstallCommand(base, orthanc, { mask = false } = {}) {
+  if (!orthanc.enabled) return base;
+  const parts = [base];
+  if (orthanc.url.trim()) parts.push('--orthanc-url', shellQuote(orthanc.url.trim()));
+  if (orthanc.user) parts.push('--orthanc-user', shellQuote(orthanc.user));
+  if (orthanc.user || orthanc.pass) parts.push('--orthanc-pass', mask && orthanc.pass ? '••••••••' : shellQuote(orthanc.pass));
+  if (orthanc.storage.trim()) parts.push('--storage', shellQuote(orthanc.storage.trim()));
+  return parts.join(' ');
+}
+
+const NO_ORTHANC = { enabled: false, user: '', pass: '', url: '', storage: '' };
+
+// Shown once after adding a server or asking for a new token. The Orthanc login is only
+// ever put into the command shown here; Router Hub does not store it.
 export function InstallSheet({ install, onClose }) {
+  const [orthanc, setOrthanc] = useState(NO_ORTHANC);
+  const [reveal, setReveal] = useState(false);
+  useEffect(() => {
+    if (install) {
+      setOrthanc(NO_ORTHANC);
+      setReveal(false);
+    }
+  }, [install]);
+
+  const set = (key) => (e) => setOrthanc((o) => ({ ...o, [key]: e.target.value }));
+  const base = install?.command || '';
+  const command = buildInstallCommand(base, orthanc);
+  const shown = buildInstallCommand(base, orthanc, { mask: !reveal });
+  const missingPass = orthanc.enabled && orthanc.user && !orthanc.pass;
+
   return (
-    <Sheet open={Boolean(install)} onClose={onClose} title="Install the Agent" subtitle={install?.name} width={640}>
+    <Sheet open={Boolean(install)} onClose={onClose} title="Install the Agent" subtitle={install?.name} width={660}>
       <div className="sheet-body">
         <p className="sheet-text">Run this once on the server, as root. It installs a small script that reports every minute, and sends the first report straight away.</p>
+
+        <label className="check-row" htmlFor="install-orthanc">
+          <input id="install-orthanc" type="checkbox" checked={orthanc.enabled} onChange={(e) => setOrthanc((o) => ({ ...o, enabled: e.target.checked }))} />
+          <span>
+            <strong>This server runs Orthanc</strong>
+            <span>Add its login so the page can show patients, studies and storage. The agent finds Orthanc by itself; the address and storage are only needed if it cannot.</span>
+          </span>
+        </label>
+
+        <AnimatePresence initial={false}>
+          {orthanc.enabled && (
+            <motion.div
+              className="orthanc-fields"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3, ease }}
+            >
+              <div className="drop-fields">
+                <Field label="Orthanc username">
+                  {(id) => <input id={id} className="input" value={orthanc.user} onChange={set('user')} autoComplete="off" autoCapitalize="none" spellCheck="false" placeholder="orthanc" autoFocus />}
+                </Field>
+                <Field label="Orthanc password" error={missingPass ? 'Enter the password too.' : ''}>
+                  {(id) => <input id={id} className="input" type="password" value={orthanc.pass} onChange={set('pass')} autoComplete="new-password" />}
+                </Field>
+              </div>
+              <div className="drop-fields">
+                <Field label="Address" hint="Optional. Found automatically.">
+                  {(id) => <input id={id} className="input" value={orthanc.url} onChange={set('url')} placeholder="http://127.0.0.1:8042" autoComplete="off" spellCheck="false" />}
+                </Field>
+                <Field label="DICOM storage" hint="Optional. Found automatically.">
+                  {(id) => <input id={id} className="input" value={orthanc.storage} onChange={set('storage')} placeholder="/mnt/dicom" autoComplete="off" spellCheck="false" />}
+                </Field>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="code-box">
-          <pre>{install?.command}</pre>
-          <CopyButton variant="tinted" size="sm" text={install?.command || ''} label="Copy" message="Install command copied" />
+          <pre>{shown}</pre>
+          <div className="code-actions">
+            <CopyButton variant="tinted" size="sm" text={command} label="Copy" message="Install command copied" />
+            {orthanc.enabled && orthanc.pass && (
+              <button type="button" className="link" onClick={() => setReveal((r) => !r)}>
+                {reveal ? 'Hide password' : 'Show password'}
+              </button>
+            )}
+          </div>
         </div>
         <p className="field-hint">
-          The token in this command is shown only now. Orthanc and its storage are found automatically when they can be. If not, add <code>--storage /mnt/dicom</code> for the mounted DICOM
-          storage, <code>--orthanc-url http://127.0.0.1:8042</code>, and <code>--orthanc-user</code> / <code>--orthanc-pass</code> when Orthanc asks for a login.
+          The token in this command is shown only now. {orthanc.enabled && orthanc.pass ? 'Copy includes the real password; it is not saved in Router Hub. ' : ''}Already installed? Running the
+          command again just updates the settings.
         </p>
         <div className="sheet-actions">
           <Button onClick={onClose}>Done</Button>
