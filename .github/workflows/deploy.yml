@@ -171,6 +171,8 @@ jobs:
             fi
           done
           if [ -n "$blocked" ]; then
+            in_use="$(ss -ltnH 2>/dev/null | awk '{n=split($4,a,":"); print a[n]}' | sort -nu | tr '\n' ' ')"
+            echo "Ports already in use on the server: $in_use"
             echo "::error::Port(s)$blocked on the server are already used by another program (details above). Nothing was changed. Without a domain, set the HTTP_PORT secret to a free port."
             exit 1
           fi
