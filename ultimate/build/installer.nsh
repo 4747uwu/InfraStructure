@@ -207,6 +207,53 @@
   ${EndIf}
 !macroend
 
+; ---------------------------------------------------------------------------
+; Standard-user accounts
+;
+; This is a per-machine installer: it writes to Program Files and to the
+; machine certificate store, so it needs an administrator. Windows normally
+; asks for one before the installer starts. With User Account Control turned
+; off it does not: the installer starts with a Standard user's rights and
+; fails at the first file it writes ("Error opening file for writing:
+; ...\uninstallerIcon.ico"). So check first, and if this account is not an
+; administrator, open Windows' "Run as different user" box to start the
+; installer again as one.
+;
+; preInit runs before the installer takes its single-instance lock, so the
+; copy started as the administrator is not turned away by this one. It is
+; skipped while the build generates the uninstaller (BUILD_UNINSTALLER).
+!macro requireAdministrator
+  ${IfNot} ${UAC_IsAdmin}
+    ${If} ${Silent}
+      SetErrorLevel 740 ; ERROR_ELEVATION_REQUIRED
+      Quit
+    ${EndIf}
+
+    ReadEnvStr $0 USERNAME
+    ${IfNot} ${Cmd} `MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION|MB_TOPMOST "${PRODUCT_NAME} must be installed by a Windows administrator.$\r$\n$\r$\nThis account ($0) is a Standard user. Click OK and sign in with an administrator account to continue the installation." IDOK`
+      SetErrorLevel 1223 ; ERROR_CANCELLED
+      Quit
+    ${EndIf}
+
+    ; Wait rather than quit straight away: Windows opens the sign-in box from
+    ; this process, and quitting at once can close it before it appears.
+    ${GetParameters} $1
+    ClearErrors
+    ExecShellWait "runasuser" "$EXEPATH" "$1"
+    ${If} ${Errors}
+      MessageBox MB_OK|MB_ICONINFORMATION|MB_TOPMOST "${PRODUCT_NAME} was not installed.$\r$\n$\r$\nTo install it, either log in to Windows with an administrator account and run this installer, or hold Shift, right-click the installer, choose $\"Run as different user$\" and sign in with an administrator account."
+      SetErrorLevel 740
+    ${EndIf}
+    Quit
+  ${EndIf}
+!macroend
+
+!macro preInit
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro requireAdministrator
+  !endif
+!macroend
+
 !macro customInit
   !insertmacro killSender
 !macroend
